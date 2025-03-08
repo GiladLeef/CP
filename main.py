@@ -14,32 +14,36 @@ class Token:
 
 TOKENS = [
     ('COMMENT', r'//[^\n]*'),
-    ('CLASS',         r'class'),
-    ('INT',           r'int'),
-    ('RETURN',        r'return'),
-    ('NUMBER',        r'\d+'),
-    ('ID',            r'[a-zA-Z_][a-zA-Z0-9_]*'),
-    ('LPAREN',        r'\('),
-    ('RPAREN',        r'\)'),
-    ('LBRACE',        r'\{'),
-    ('RBRACE',        r'\}'),
-    ('SEMICOLON',       r';'),
-    ('COMMA',         r','),
-    ('PLUS',          r'\+'),
-    ('MINUS',         r'-'),
-    ('MULT',          r'\*'),
-    ('DIV',           r'/'),
-    ('MOD',           r'%'),
-    ('EQEQ',          r'=='),
-    ('NEQ',           r'!='),
-    ('LTE',           r'<='),
-    ('GTE',           r'>='),
-    ('EQ',            r'='),
-    ('LT',            r'<'),
-    ('GT',            r'>'),
-    ('STRING',        r'"[^"]*"'),
-    ('DOT',           r'\.'),
-    ('WS',            r'\s+'),
+    ('CLASS',             r'class'),
+    ('INT',               r'int'),
+    ('FLOAT',             r'float'),
+    ('CHAR',              r'char'),
+    ('RETURN',            r'return'),
+    ('FLOAT_NUMBER',      r'\d+\.\d+'),
+    ('NUMBER',            r'\d+'),
+    ('CHAR_LITERAL',      r'\'[^\']\''),
+    ('ID',                r'[a-zA-Z_][a-zA-Z0-9_]*'),
+    ('LPAREN',            r'\('),
+    ('RPAREN',            r'\)'),
+    ('LBRACE',            r'\{'),
+    ('RBRACE',            r'\}'),
+    ('SEMICOLON',         r';'),
+    ('COMMA',             r','),
+    ('PLUS',              r'\+'),
+    ('MINUS',             r'-'),
+    ('MULT',              r'\*'),
+    ('DIV',               r'/'),
+    ('MOD',               r'%'),
+    ('EQEQ',              r'=='),
+    ('NEQ',               r'!='),
+    ('LTE',               r'<='),
+    ('GTE',               r'>='),
+    ('EQ',                r'='),
+    ('LT',                r'<'),
+    ('GT',                r'>'),
+    ('STRING',            r'"[^"]*"'),
+    ('DOT',               r'\.'),
+    ('WS',                r'\s+'),
 ]
 class ASTNode:
     pass
@@ -78,11 +82,19 @@ class Num(ASTNode):
     def __init__(self, value):
         self.value = int(value)
 
+class FloatNum(ASTNode):
+    def __init__(self, value):
+        self.value = float(value)
+
 class Var(ASTNode):
     def __init__(self, name):
         self.name = name
 
 class String(ASTNode):
+    def __init__(self, value):
+        self.value = value
+
+class Char(ASTNode):
     def __init__(self, value):
         self.value = value
 
@@ -122,6 +134,8 @@ def lex(characters):
                 if token_type != 'WS':
                     if token_type == 'STRING':
                         text = text[1:-1]
+                    elif token_type == 'CHAR_LITERAL':
+                        text = text[1:-1]
                     tokens.append(Token(token_type, text))
                 pos = match.end(0)
                 break
@@ -156,7 +170,7 @@ class Parser:
                 class_decl = self.parse_class_declaration()
                 classes.append(class_decl)
                 self.class_names.add(class_decl.name)
-            elif self.current().type == 'INT':
+            elif self.current().type in ('INT', 'FLOAT', 'CHAR', 'ID') and (self.current().type != 'ID' or self.current().value != 'class'):
                 functions.append(self.parse_function())
             else:
                 if self.current() is not None:
@@ -179,17 +193,15 @@ class Parser:
         return ClassDecl(class_name, members)
 
     def parse_declaration_member(self):
-        data_type_token = self.consume('INT')
+        data_type_token = self.consume_datatype()
         var_name = self.consume('ID').value
         self.consume('SEMICOLON')
-        return VarDecl(var_name, None, datatype_name='int')
+        return VarDecl(var_name, None, datatype_name=data_type_token.value)
 
     def parse_declaration(self):
         data_type_token = self.consume_datatype()
         var_name = self.consume('ID').value
         datatype_name = data_type_token.value
-        if data_type_token.type == 'INT':
-            datatype_name = 'int'
 
         if self.current() and self.current().type == 'EQ':
             self.consume('EQ')
@@ -200,7 +212,7 @@ class Parser:
         return VarDecl(var_name, None, datatype_name=datatype_name)
 
     def parse_function(self):
-        self.consume('INT')
+        data_type_token = self.consume_datatype()
         name = self.consume('ID').value
         self.consume('LPAREN')
         self.consume('RPAREN')
@@ -215,7 +227,7 @@ class Parser:
         token = self.current()
         if token.type == 'RETURN':
             return self.parse_return()
-        elif token.type == 'INT' or (token.type == 'ID' and token.value in self.class_names):
+        elif token.type in ('INT', 'FLOAT', 'CHAR') or (token.type == 'ID' and token.value == 'string'):
             return self.parse_declaration()
         else:
             expr = self.parse_expression()
@@ -224,11 +236,11 @@ class Parser:
 
     def consume_datatype(self):
         token = self.current()
-        if token.type == 'INT' or (token.type == 'ID' and token.value in self.class_names):
+        if token.type in ('INT', 'FLOAT', 'CHAR') or (token.type == 'ID' and (token.value in self.class_names or token.value == 'string')):
             self.pos += 1
             return token
         else:
-            raise SyntaxError(f"Expected datatype (INT or Class Name), got {token}")
+            raise SyntaxError(f"Expected datatype (INT, FLOAT, CHAR, string or Class Name), got {token}")
 
     def parse_return(self):
         self.consume('RETURN')
@@ -281,9 +293,16 @@ class Parser:
         if token.type == 'NUMBER':
             self.consume('NUMBER')
             return Num(token.value)
+        elif token.type == 'FLOAT_NUMBER':
+            self.consume('FLOAT_NUMBER')
+            return FloatNum(token.value)
         elif token.type == 'STRING':
             self.consume('STRING')
             return String(token.value)
+        elif token.type == 'CHAR_LITERAL':
+            self.consume('CHAR_LITERAL')
+            char_value = token.value
+            return Char(char_value[1:-1])
         elif token.type == 'ID':
             self.consume('ID')
             name = token.value
@@ -386,7 +405,21 @@ class CodeGen:
         elif isinstance(node, ExpressionStatement):
             return self.codegen(node.expr)
         elif isinstance(node, VarDecl):
-            var_addr = self.builder.alloca(ir.PointerType(self.class_struct_types[node.datatype_name]) if node.datatype_name in self.class_struct_types else ir.IntType(32), name=node.name)
+            var_type = None
+            if node.datatype_name == 'int':
+                var_type = ir.IntType(32)
+            elif node.datatype_name == 'float':
+                var_type = ir.FloatType()
+            elif node.datatype_name == 'char':
+                var_type = ir.IntType(8)
+            elif node.datatype_name == 'string':
+                var_type = ir.PointerType(ir.IntType(8))
+            elif node.datatype_name in self.class_struct_types:
+                var_type = ir.PointerType(self.class_struct_types[node.datatype_name])
+            else:
+                raise ValueError(f"Unknown datatype: {node.datatype_name}")
+
+            var_addr = self.builder.alloca(var_type, name=node.name)
             if node.init:
                 init_val = self.codegen(node.init)
                 self.builder.store(init_val, var_addr)
@@ -395,43 +428,83 @@ class CodeGen:
         elif isinstance(node, BinOp):
             left = self.codegen(node.left)
             right = self.codegen(node.right)
+            print(f"BinOp: {node.op}, left type: {left.type}, right type: {right.type}") # Debug print
             if node.op == '+':
-                return self.builder.add(left, right, name="addtmp")
+                if left.type == ir.FloatType() or right.type == ir.FloatType(): # Check both operands
+                    return self.builder.fadd(left, right, name="faddtmp")
+                else:
+                    return self.builder.add(left, right, name="addtmp")
             elif node.op == '-':
-                return self.builder.sub(left, right, name="subtmp")
+                if left.type == ir.FloatType() or right.type == ir.FloatType(): # Check both operands
+                    return self.builder.fsub(left, right, name="fsubtmp")
+                else:
+                    return self.builder.sub(left, right, name="subtmp")
             elif node.op == '*':
-                return self.builder.mul(left, right, name="multmp")
+                if left.type == ir.FloatType() or right.type == ir.FloatType(): # Check both operands
+                    return self.builder.fmul(left, right, name="fmultmp")
+                else:
+                    return self.builder.mul(left, right, name="multmp")
             elif node.op == '/':
-                return self.builder.sdiv(left, right, name="divtmp")
+                if left.type == ir.FloatType() or right.type == ir.FloatType(): # Check both operands
+                    return self.builder.fdiv(left, right, name="fdivtmp")
+                else:
+                    return self.builder.sdiv(left, right, name="divtmp")
             elif node.op == '%':
                 return self.builder.srem(left, right, name="remtmp")
             elif node.op == 'EQEQ':
-                bool_val = self.builder.icmp_signed("==", left, right, name="eqtmp")
+                if left.type == ir.FloatType():
+                    bool_val = self.builder.fcmp_ordered("==", left, right, name="feqtmp")
+                else:
+                    bool_val = self.builder.icmp_signed("==", left, right, name="eqtmp")
                 return self.builder.zext(bool_val, ir.IntType(32), name="eq_int_tmp")
             elif node.op == 'NEQ':
-                bool_val = self.builder.icmp_signed("!=", left, right, name="neqtmp")
+                if left.type == ir.FloatType():
+                    bool_val = self.builder.fcmp_ordered("!=", left, right, name="fneqtmp")
+                else:
+                    bool_val = self.builder.icmp_signed("!=", left, right, name="neqtmp")
                 return self.builder.zext(bool_val, ir.IntType(32), name="neq_int_tmp")
             elif node.op == 'LT':
-                bool_val = self.builder.icmp_signed("<", left, right, name="lttmp")
+                if left.type == ir.FloatType():
+                    bool_val = self.builder.fcmp_ordered("<", left, right, name="flttmp")
+                else:
+                    bool_val = self.builder.icmp_signed("<", left, right, name="lttmp")
                 return self.builder.zext(bool_val, ir.IntType(32), name="lt_int_tmp")
             elif node.op == 'GT':
-                bool_val = self.builder.icmp_signed(">", left, right, name="gttmp")
+                if left.type == ir.FloatType():
+                    bool_val = self.builder.fcmp_ordered(">", left, right, name="fgttmp")
+                else:
+                    bool_val = self.builder.icmp_signed(">", left, right, name="gttmp")
                 return self.builder.zext(bool_val, ir.IntType(32), name="gt_int_tmp")
             elif node.op == 'LTE':
-                bool_val = self.builder.icmp_signed("<=", left, right, name="letmp")
+                if left.type == ir.FloatType():
+                    bool_val = self.builder.fcmp_ordered("<=", left, right, name="fletmp")
+                else:
+                    bool_val = self.builder.icmp_signed("<=", left, right, name="letmp")
                 return self.builder.zext(bool_val, ir.IntType(32), name="lte_int_tmp")
             elif node.op == 'GTE':
-                bool_val = self.builder.icmp_signed(">=", left, right, name="getmp")
+                if left.type == ir.FloatType():
+                    bool_val = self.builder.fcmp_ordered(">=", left, right, name="fgetmp")
+                else:
+                    bool_val = self.builder.icmp_signed(">=", left, right, name="getmp")
                 return self.builder.zext(bool_val, ir.IntType(32), name="gte_int_tmp")
             else:
                 raise ValueError(f"Unknown binary operator {node.op}")
         elif isinstance(node, Num):
             return ir.Constant(ir.IntType(32), node.value)
+        elif isinstance(node, FloatNum):
+            return ir.Constant(ir.FloatType(), node.value)
         elif isinstance(node, String):
             return self.create_string_constant(node.value)
+        elif isinstance(node, Char):
+            return ir.Constant(ir.IntType(8), ord(node.value))
         elif isinstance(node, Var):
             if node.name in self.func_symtab:
-                return self.builder.load(self.func_symtab[node.name]['addr'], name=node.name)
+                var_info = self.func_symtab[node.name]
+                var_addr = var_info['addr']
+                if var_info['datatype_name'] == 'string':
+                    return self.builder.load(var_addr, name=node.name)
+                else:
+                    return self.builder.load(var_addr, name=node.name)
             else:
                 raise NameError(f"Undefined variable: {node.name}")
         elif isinstance(node, FunctionCall):
@@ -522,8 +595,12 @@ class CodeGen:
             llvm_args.append(arg_val)
             if arg_val.type == ir.IntType(32):
                 format_str_parts.append("%d")
+            elif arg_val.type == ir.FloatType():
+                format_str_parts.append("%f")
+            elif arg_val.type == ir.IntType(8):
+                format_str_parts.append("%c")
             elif arg_val.type.is_pointer and arg_val.type.pointee == ir.IntType(8):
-                 format_str_parts.append("%s")
+                format_str_parts.append("%s")
             else:
                 format_str_parts.append("%?")
         full_format_str = " ".join(format_str_parts) + "\n"
@@ -565,7 +642,7 @@ if __name__ == "__main__":
     with open(source_file, "r") as f:
         source_code = f.read()
     tokens = lex(source_code)
-    print(tokens) # for debugging
+    print(tokens)
     parser = Parser(tokens)
     ast = parser.parse()
     codegen = CodeGen()
