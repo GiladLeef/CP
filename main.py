@@ -11,7 +11,7 @@ def compile_generated_module(llvm_module, output_exe):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python compiler.py <source_file>")
+        print("Usage: python main.py <source_file>")
         sys.exit(1)
     source_file = sys.argv[1]
     base_filename = os.path.splitext(source_file)[0]
