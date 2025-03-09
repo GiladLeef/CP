@@ -7,7 +7,7 @@ from ast import *
 
 class CodeGen:
     def __init__(self):
-        self.module = ir.Module(name="my_module")
+        self.module = ir.Module(name="module")
         self.builder = None
         self.func_symtab = {}
         self.string_counter = 0
