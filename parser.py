@@ -7,6 +7,13 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.class_names = set()
+        self.statement_parse_map = {
+            'RETURN': self.parse_return,
+            'IF': self.parse_if,
+            'WHILE': self.parse_while,
+            'FOR': self.parse_for,
+            'DO': self.parse_do_while,
+        }
     def current(self):
         if self.pos < len(self.tokens):
             return self.tokens[self.pos]
@@ -71,16 +78,8 @@ class Parser:
         return Function(name, body)
     def parse_statement(self):
         token = self.current()
-        if token.type == 'RETURN':
-            return self.parse_return()
-        elif token.type == 'IF':
-            return self.parse_if()
-        elif token.type == 'WHILE':
-            return self.parse_while()
-        elif token.type == 'FOR':
-            return self.parse_for()
-        elif token.type == 'DO':
-            return self.parse_do_while()
+        if token.type in self.statement_parse_map:
+            return self.statement_parse_map[token.type]()
         elif token.type in ('INT', 'FLOAT', 'CHAR') or (token.type == 'ID' and token.value == 'string'):
             return self.parse_declaration()
         else:
