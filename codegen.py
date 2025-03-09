@@ -32,6 +32,19 @@ class CodeGen:
             For: self.codegen_for,
             DoWhile: self.codegen_do_while,
         }
+        self.binop_codegen_map = {
+            '+': self.codegen_add,
+            '-': self.codegen_sub,
+            '*': self.codegen_mul,
+            '/': self.codegen_div,
+            '%': self.codegen_rem,
+            'EQEQ': self.codegen_eqeq,
+            'NEQ': self.codegen_neq,
+            'LT': self.codegen_lt,
+            'GT': self.codegen_gt,
+            'LTE': self.codegen_lte,
+            'GTE': self.codegen_gte,
+        }
     def declare_print_func(self):
         print_type = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
         self.print_func = ir.Function(self.module, print_type, name="printf")
@@ -108,103 +121,90 @@ class CodeGen:
         self.func_symtab[node.name] = {'addr': var_addr, 'datatype_name': node.datatype_name}
         return var_addr
     def codegen_binop(self, node):
-        left = self.codegen(node.left)
-        right = self.codegen(node.right)
-        if node.op == '+':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                return self.builder.fadd(left, right, name="faddtmp")
-            return self.builder.add(left, right, name="addtmp")
-        elif node.op == '-':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                return self.builder.fsub(left, right, name="fsubtmp")
-            return self.builder.sub(left, right, name="subtmp")
-        elif node.op == '*':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                return self.builder.fmul(left, right, name="fmultmp")
-            return self.builder.mul(left, right, name="multmp")
-        elif node.op == '/':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                return self.builder.fdiv(left, right, name="fdivtmp")
-            return self.builder.sdiv(left, right, name="divtmp")
-        elif node.op == '%':
-            return self.builder.srem(left, right, name="remtmp")
-        elif node.op == 'EQEQ':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                bool_val = self.builder.fcmp_ordered("==", left, right, name="feqtmp")
-            else:
-                bool_val = self.builder.icmp_signed("==", left, right, name="eqtmp")
-            return self.builder.zext(bool_val, ir.IntType(32), name="eq_int_tmp")
-        elif node.op == 'NEQ':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                bool_val = self.builder.fcmp_ordered("!=", left, right, name="fneqtmp")
-            else:
-                bool_val = self.builder.icmp_signed("!=", left, right, name="neqtmp")
-            return self.builder.zext(bool_val, ir.IntType(32), name="neq_int_tmp")
-        elif node.op == 'LT':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                bool_val = self.builder.fcmp_ordered("<", left, right, name="flttmp")
-            else:
-                bool_val = self.builder.icmp_signed("<", left, right, name="lttmp")
-            return self.builder.zext(bool_val, ir.IntType(32), name="lt_int_tmp")
-        elif node.op == 'GT':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                bool_val = self.builder.fcmp_ordered(">", left, right, name="fgttmp")
-            else:
-                bool_val = self.builder.icmp_signed(">", left, right, name="gttmp")
-            return self.builder.zext(bool_val, ir.IntType(32), name="gt_int_tmp")
-        elif node.op == 'LTE':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                bool_val = self.builder.fcmp_ordered("<=", left, right, name="fletmp")
-            else:
-                bool_val = self.builder.icmp_signed("<=", left, right, name="letmp")
-            return self.builder.zext(bool_val, ir.IntType(32), name="lte_int_tmp")
-        elif node.op == 'GTE':
-            if left.type == ir.FloatType() or right.type == ir.FloatType():
-                if left.type != ir.FloatType():
-                    left = self.builder.sitofp(left, ir.FloatType())
-                if right.type != ir.FloatType():
-                    right = self.builder.sitofp(right, ir.FloatType())
-                bool_val = self.builder.fcmp_ordered(">=", left, right, name="fgetmp")
-            else:
-                bool_val = self.builder.icmp_signed(">=", left, right, name="getmp")
-            return self.builder.zext(bool_val, ir.IntType(32), name="gte_int_tmp")
+        if node.op in self.binop_codegen_map:
+            return self.binop_codegen_map[node.op](node)
         raise ValueError(f"Unknown binary operator {node.op}")
+    def codegen_add(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            return self.builder.fadd(left, right, name="faddtmp")
+        return self.builder.add(left, right, name="addtmp")
+    def codegen_sub(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            return self.builder.fsub(left, right, name="fsubtmp")
+        return self.builder.sub(left, right, name="subtmp")
+    def codegen_mul(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            return self.builder.fmul(left, right, name="fmultmp")
+        return self.builder.mul(left, right, name="multmp")
+    def codegen_div(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            return self.builder.fdiv(left, right, name="fdivtmp")
+        return self.builder.sdiv(left, right, name="divtmp")
+    def codegen_rem(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        return self.builder.srem(left, right, name="remtmp")
+    def codegen_eqeq(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            bool_val = self.builder.fcmp_ordered("==", left, right, name="feqtmp")
+        else:
+            bool_val = self.builder.icmp_signed("==", left, right, name="eqtmp")
+        return self.builder.zext(bool_val, ir.IntType(32), name="eq_int_tmp")
+    def codegen_neq(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            bool_val = self.builder.fcmp_ordered("!=", left, right, name="fneqtmp")
+        else:
+            bool_val = self.builder.icmp_signed("!=", left, right, name="neqtmp")
+        return self.builder.zext(bool_val, ir.IntType(32), name="neq_int_tmp")
+    def codegen_lt(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            bool_val = self.builder.fcmp_ordered("<", left, right, name="flttmp")
+        else:
+            bool_val = self.builder.icmp_signed("<", left, right, name="lttmp")
+        return self.builder.zext(bool_val, ir.IntType(32), name="lt_int_tmp")
+    def codegen_gt(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            bool_val = self.builder.fcmp_ordered(">", left, right, name="fgttmp")
+        else:
+            bool_val = self.builder.icmp_signed(">", left, right, name="gttmp")
+        return self.builder.zext(bool_val, ir.IntType(32), name="gt_int_tmp")
+    def codegen_lte(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            bool_val = self.builder.fcmp_ordered("<=", left, right, name="fletmp")
+        else:
+            bool_val = self.builder.icmp_signed("<=", left, right, name="letmp")
+        return self.builder.zext(bool_val, ir.IntType(32), name="lte_int_tmp")
+    def codegen_gte(self, node):
+        left, right = self.codegen(node.left), self.codegen(node.right)
+        if left.type == ir.FloatType() or right.type == ir.FloatType():
+            left, right = self.promote_to_float(left, right)
+            bool_val = self.builder.fcmp_ordered(">=", left, right, name="fgetmp")
+        else:
+            bool_val = self.builder.icmp_signed(">=", left, right, name="getmp")
+        return self.builder.zext(bool_val, ir.IntType(32), name="gte_int_tmp")
+    def promote_to_float(self, left, right):
+        if left.type != ir.FloatType():
+            left = self.builder.sitofp(left, ir.FloatType())
+        if right.type != ir.FloatType():
+            right = self.builder.sitofp(right, ir.FloatType())
+        return left, right
     def codegen_num(self, node):
         return ir.Constant(ir.IntType(32), node.value)
     def codegen_floatnum(self, node):

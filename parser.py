@@ -14,6 +14,15 @@ class Parser:
             'FOR': self.parse_for,
             'DO': self.parse_do_while,
         }
+        self.factor_parse_map = {
+            'NUMBER': self.parse_number,
+            'FLOAT_NUMBER': self.parse_float_number,
+            'STRING': self.parse_string,
+            'CHAR_LITERAL': self.parse_char_literal,
+            'ID': self.parse_identifier,
+            'LPAREN': self.parse_parenthesized_expression,
+        }
+
     def current(self):
         if self.pos < len(self.tokens):
             return self.tokens[self.pos]
@@ -133,34 +142,36 @@ class Parser:
         return node
     def parse_factor(self):
         token = self.current()
-        if token.type == 'NUMBER':
-            self.consume('NUMBER')
-            return Num(token.value)
-        elif token.type == 'FLOAT_NUMBER':
-            self.consume('FLOAT_NUMBER')
-            return FloatNum(token.value)
-        elif token.type == 'STRING':
-            self.consume('STRING')
-            return String(token.value)
-        elif token.type == 'CHAR_LITERAL':
-            self.consume('CHAR_LITERAL')
-            return Char(token.value)
-        elif token.type == 'ID':
-            self.consume('ID')
-            name = token.value
-            if self.current() and self.current().type == 'DOT':
-                self.consume('DOT')
-                member_name = self.consume('ID').value
-                return MemberAccess(Var(name), member_name)
-            elif self.current() and self.current().type == 'LPAREN':
-                return self.parse_function_call(name)
-            return Var(name)
-        elif token.type == 'LPAREN':
-            self.consume('LPAREN')
-            node = self.parse_expression()
-            self.consume('RPAREN')
-            return node
+        if token.type in self.factor_parse_map:
+            return self.factor_parse_map[token.type]()
         raise SyntaxError(f"Unexpected token: {token}")
+    def parse_number(self):
+        token = self.consume('NUMBER')
+        return Num(token.value)
+    def parse_float_number(self):
+        token = self.consume('FLOAT_NUMBER')
+        return FloatNum(token.value)
+    def parse_string(self):
+        token = self.consume('STRING')
+        return String(token.value)
+    def parse_char_literal(self):
+        token = self.consume('CHAR_LITERAL')
+        return Char(token.value)
+    def parse_identifier(self):
+        token = self.consume('ID')
+        name = token.value
+        if self.current() and self.current().type == 'DOT':
+            self.consume('DOT')
+            member_name = self.consume('ID').value
+            return MemberAccess(Var(name), member_name)
+        elif self.current() and self.current().type == 'LPAREN':
+            return self.parse_function_call(name)
+        return Var(name)
+    def parse_parenthesized_expression(self):
+        self.consume('LPAREN')
+        node = self.parse_expression()
+        self.consume('RPAREN')
+        return node
     def parse_function_call(self, func_name):
         self.consume('LPAREN')
         args = []
