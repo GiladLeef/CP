@@ -31,10 +31,6 @@ def compile_module(llvm_module, output_exe):
     os.remove(linked_bc_filename)
     print(f"Executable '{output_exe}' generated.")
 
-
-def compile_generated_module(llvm_module, output_exe):
-    compile_module(llvm_module, output_exe)
-
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python main.py <source_file>")
@@ -52,4 +48,4 @@ if __name__ == "__main__":
     codegen = CodeGen()
     codegen.program_node = ast
     llvm_module = codegen.generate_code(ast)
-    compile_generated_module(llvm_module, output_exe)
+    compile_module(llvm_module, output_exe)
