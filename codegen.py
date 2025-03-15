@@ -1,300 +1,271 @@
-# codegen.py
-import subprocess, os
 from llvmlite import binding as llvm
 from llvmlite import ir
-from ast import *
 
 class CodeGen:
-    def __init__(self):
+    def __init__(self, langDef):
         self.module = ir.Module(name="module")
         self.builder = None
-        self.func_symtab = {}
-        self.string_counter = 0
-        self.program_node = None
-        self.class_struct_types = {}
-        self.declare_print_func()
+        self.funcSymtab = {}
+        self.stringCounter = 0
+        self.programNode = None
+        self.classStructTypes = {}
+        self.declarePrintFunc()
+        self.binOpMap = langDef["operators"]["binOpMap"]
+        self.compMap = langDef["operators"]["compMap"]
+        self.dispatch = {}
+        for key, methodName in langDef["dispatchMap"].items():
+            self.dispatch[key] = getattr(self, methodName)
 
-        # Operator maps: (int_op, float_op, result_name)
-        self.binop_map = {
-            '+': ('add', 'fadd', 'addtmp'),
-            '-': ('sub', 'fsub', 'subtmp'),
-            '*': ('mul', 'fmul', 'multmp'),
-            '/': ('sdiv', 'fdiv', 'divtmp'),
-            '%': ('srem', 'srem', 'remtmp'),
-        }
-        # Comparison maps: (int_cmp, float_cmp, result_name)
-        self.comp_map = {
-            'EQEQ': ('==', '==', 'eqtmp'),
-            'NEQ':  ('!=', '!=', 'neqtmp'),
-            'LT':   ('<', '<', 'lttmp'),
-            'GT':   ('>', '>', 'gttmp'),
-            'LTE':  ('<=', '<=', 'letmp'),
-            'GTE':  ('>=', '>=', 'getmp'),
-        }
-        
-        # Dispatch table mapping AST node types to handlers.
-        # Simple nodes use lambdas; complex ones call dedicated helper methods.
-        self.dispatch = {
-            Return: lambda n: self.builder.ret(self.codegen(n.expr)),
-            ExpressionStatement: lambda n: self.codegen(n.expr),
-            Num: lambda n: ir.Constant(ir.IntType(32), n.value),
-            FloatNum: lambda n: ir.Constant(ir.FloatType(), n.value),
-            String: lambda n: self.create_string_constant(n.value),
-            Char: lambda n: ir.Constant(ir.IntType(8), ord(n.value)),
-            Var: self.codegen_var,
-            BinOp: self.codegen_binop,
-            FunctionCall: self.codegen_function_call,
-            MemberAccess: self.codegen_member_access,
-            Assign: self.codegen_assignment,
-            If: self.codegen_if,
-            While: self.codegen_while,
-            For: self.codegen_for,
-            DoWhile: self.codegen_do_while,
-            VarDecl: self.codegen_var_decl,
-        }
+    def declarePrintFunc(self):
+        printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
+        self.printFunc = ir.Function(self.module, printType, name="printf")
 
-    def declare_print_func(self):
-        print_type = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
-        self.print_func = ir.Function(self.module, print_type, name="printf")
-
-    def generate_code(self, node):
-        if isinstance(node, Program):
-            self.program_node = node
-            # First, create class struct types.
+    def generateCode(self, node):
+        if node.__class__.__name__ == "Program":
+            self.programNode = node
             for cls in node.classes:
-                self.codegen_class_declaration(cls)
-            # Then generate functions.
+                self.codegenClassDeclaration(cls)
             for func in node.functions:
-                self.codegen_function(func)
+                self.codegenFunction(func)
         return self.module
 
-    def create_string_constant(self, s):
-        s_bytes = bytearray((s + '\0').encode('utf8'))
-        str_type = ir.ArrayType(ir.IntType(8), len(s_bytes))
-        name = f".str.{self.string_counter}"
-        self.string_counter += 1
-        global_str = ir.GlobalVariable(self.module, str_type, name=name)
-        global_str.global_constant = True
-        global_str.linkage = 'private'
-        global_str.initializer = ir.Constant(str_type, s_bytes)
+    def createStringConstant(self, s):
+        sBytes = bytearray((s + "\0").encode("utf8"))
+        strType = ir.ArrayType(ir.IntType(8), len(sBytes))
+        name = ".str." + str(self.stringCounter)
+        self.stringCounter += 1
+        globalStr = ir.GlobalVariable(self.module, strType, name=name)
+        globalStr.global_constant = True
+        globalStr.linkage = "private"
+        globalStr.initializer = ir.Constant(strType, sBytes)
         zero = ir.Constant(ir.IntType(32), 0)
-        return self.builder.gep(global_str, [zero, zero], name="str")
+        return self.builder.gep(globalStr, [zero, zero], name="str")
 
-    def get_member_index(self, class_name, member_name):
-        for cls in self.program_node.classes:
-            if cls.name == class_name:
+    def getMemberIndex(self, className, memberName):
+        for cls in self.programNode.classes:
+            if cls.name == className:
                 for i, member in enumerate(cls.members):
-                    if member.name == member_name:
+                    if member.name == memberName:
                         return i
-        raise NameError(f"Member '{member_name}' not found in class '{class_name}'.")
+        raise NameError("Member '" + memberName + "' not found in class '" + className + "'.")
 
-    def promote_to_float(self, left, right):
+    def promoteToFloat(self, left, right):
         if left.type != ir.FloatType():
             left = self.builder.sitofp(left, ir.FloatType())
         if right.type != ir.FloatType():
             right = self.builder.sitofp(right, ir.FloatType())
         return left, right
 
-    # Generic arithmetic and comparison routines
-    def gen_arith(self, node, int_op, float_op, res_name):
+    def genArith(self, node, intOp, floatOp, resName):
         left = self.codegen(node.left)
         right = self.codegen(node.right)
         if left.type == ir.FloatType() or right.type == ir.FloatType():
-            left, right = self.promote_to_float(left, right)
-            return getattr(self.builder, float_op)(left, right, name=f"f{res_name}")
-        return getattr(self.builder, int_op)(left, right, name=res_name)
+            left, right = self.promoteToFloat(left, right)
+            return getattr(self.builder, floatOp)(left, right, name="f" + resName)
+        return getattr(self.builder, intOp)(left, right, name=resName)
 
-    def gen_compare(self, node, int_cmp, float_cmp, res_name):
+    def genCompare(self, node, intCmp, floatCmp, resName):
         left = self.codegen(node.left)
         right = self.codegen(node.right)
         if left.type == ir.FloatType() or right.type == ir.FloatType():
-            left, right = self.promote_to_float(left, right)
-            cmp_res = self.builder.fcmp_ordered(float_cmp, left, right, name=f"f{res_name}")
+            left, right = self.promoteToFloat(left, right)
+            cmpRes = self.builder.fcmp_ordered(floatCmp, left, right, name="f" + resName)
         else:
-            cmp_res = self.builder.icmp_signed(int_cmp, left, right, name=res_name)
-        return self.builder.zext(cmp_res, ir.IntType(32), name=f"{res_name}_int")
+            cmpRes = self.builder.icmp_signed(intCmp, left, right, name=resName)
+        return self.builder.zext(cmpRes, ir.IntType(32), name=resName + "Int")
 
-    # Central dispatcher: lookup and call handler from the dispatch map.
     def codegen(self, node):
-        for ast_type, handler in self.dispatch.items():
-            if isinstance(node, ast_type):
-                return handler(node)
-        raise NotImplementedError(f"Codegen not implemented for {type(node)}")
+        nodeType = node.__class__.__name__
+        if nodeType in self.dispatch:
+            return self.dispatch[nodeType](node)
+        raise NotImplementedError("Codegen not implemented for " + nodeType)
 
-    # --- Helper methods for more complex nodes ---
+    def codegenReturn(self, node):
+        return self.builder.ret(self.codegen(node.expr))
 
-    def codegen_var_decl(self, node):
-        basic_types = {
-            'int': ir.IntType(32),
-            'float': ir.FloatType(),
-            'char': ir.IntType(8),
-            'string': ir.PointerType(ir.IntType(8))
+    def codegenExpressionStatement(self, node):
+        return self.codegen(node.expr)
+
+    def codegenNum(self, node):
+        return ir.Constant(ir.IntType(32), node.value)
+
+    def codegenFloatNum(self, node):
+        return ir.Constant(ir.FloatType(), float(node.value))
+
+    def codegenString(self, node):
+        return self.createStringConstant(node.value)
+
+    def codegenChar(self, node):
+        return ir.Constant(ir.IntType(8), ord(node.value))
+
+    def codegenVarDecl(self, node):
+        basicTypes = {
+            "int": ir.IntType(32),
+            "float": ir.FloatType(),
+            "char": ir.IntType(8),
+            "string": ir.PointerType(ir.IntType(8))
         }
-        if node.datatype_name in basic_types:
-            var_type = basic_types[node.datatype_name]
-        elif node.datatype_name in self.class_struct_types:
-            var_type = ir.PointerType(self.class_struct_types[node.datatype_name])
+        if node.datatypeName in basicTypes:
+            varType = basicTypes[node.datatypeName]
+        elif node.datatypeName in self.classStructTypes:
+            varType = ir.PointerType(self.classStructTypes[node.datatypeName])
         else:
-            raise ValueError(f"Unknown datatype: {node.datatype_name}")
-        addr = self.builder.alloca(var_type, name=node.name)
+            raise ValueError("Unknown datatype: " + node.datatypeName)
+        addr = self.builder.alloca(varType, name=node.name)
         if node.init:
             self.builder.store(self.codegen(node.init), addr)
-        self.func_symtab[node.name] = {'addr': addr, 'datatype_name': node.datatype_name}
+        self.funcSymtab[node.name] = {"addr": addr, "datatypeName": node.datatypeName}
         return addr
 
-    def codegen_binop(self, node):
-        if node.op in self.binop_map:
-            int_op, float_op, res_name = self.binop_map[node.op]
-            return self.gen_arith(node, int_op, float_op, res_name)
-        elif node.op in self.comp_map:
-            int_cmp, float_cmp, res_name = self.comp_map[node.op]
-            return self.gen_compare(node, int_cmp, float_cmp, res_name)
-        raise ValueError(f"Unknown binary operator {node.op}")
+    def codegenBinop(self, node):
+        if node.op in self.binOpMap:
+            intOp, floatOp, resName = self.binOpMap[node.op]
+            return self.genArith(node, intOp, floatOp, resName)
+        elif node.op in self.compMap:
+            intCmp, floatCmp, resName = self.compMap[node.op]
+            return self.genCompare(node, intCmp, floatCmp, resName)
+        raise ValueError("Unknown binary operator " + node.op)
 
-    def codegen_var(self, node):
-        info = self.func_symtab.get(node.name)
+    def codegenVar(self, node):
+        info = self.funcSymtab.get(node.name)
         if info:
-            return self.builder.load(info['addr'], name=node.name)
-        raise NameError(f"Undefined variable: {node.name}")
+            return self.builder.load(info["addr"], name=node.name)
+        raise NameError("Undefined variable: " + node.name)
 
-    def codegen_function_call(self, node):
+    def codegenFunctionCall(self, node):
         if node.name == "print":
-            return self.codegen_print_call(node)
-        raise NameError(f"Unknown function: {node.name}")
+            return self.codegenPrintCall(node)
+        raise NameError("Unknown function: " + node.name)
 
-    def codegen_print_call(self, node):
-        fmt_parts, llvm_args = [], []
+    def codegenPrintCall(self, node):
+        fmtParts = []
+        llvmArgs = []
         for arg in node.args:
             val = self.codegen(arg)
             if val.type == ir.FloatType():
                 val = self.builder.fpext(val, ir.DoubleType(), name="promoted")
-                fmt_parts.append("%f")
+                fmtParts.append("%f")
             elif val.type == ir.IntType(32):
-                fmt_parts.append("%d")
+                fmtParts.append("%d")
             elif val.type == ir.IntType(8):
-                fmt_parts.append("%c")
+                fmtParts.append("%c")
             elif val.type.is_pointer and val.type.pointee == ir.IntType(8):
-                fmt_parts.append("%s")
+                fmtParts.append("%s")
             else:
-                fmt_parts.append("%?")
-            llvm_args.append(val)
-        fmt_str = " ".join(fmt_parts) + "\n"
-        llvm_fmt = self.create_string_constant(fmt_str)
-        return self.builder.call(self.print_func, [llvm_fmt] + llvm_args)
+                fmtParts.append("%?")
+            llvmArgs.append(val)
+        fmtStr = " ".join(fmtParts) + "\n"
+        llvmFmt = self.createStringConstant(fmtStr)
+        return self.builder.call(self.printFunc, [llvmFmt] + llvmArgs)
 
-    def codegen_member_access(self, node):
-        obj_info = self.func_symtab[node.object_expr.name]
-        idx = self.get_member_index(obj_info['datatype_name'], node.member_name)
-        ptr = self.builder.gep(
-            self.builder.load(obj_info['addr']),
-            [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)],
-            name="member_ptr"
-        )
-        return self.builder.load(ptr, name=node.member_name)
+    def codegenMemberAccess(self, node):
+        objInfo = self.funcSymtab[node.objectExpr.name]
+        idx = self.getMemberIndex(objInfo["datatypeName"], node.memberName)
+        ptr = self.builder.gep(self.builder.load(objInfo["addr"]), 
+                               [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)], 
+                               name="memberPtr")
+        return self.builder.load(ptr, name=node.memberName)
 
-    def codegen_assignment(self, node):
-        if isinstance(node.left, Var):
-            info = self.func_symtab.get(node.left.name)
+    def codegenAssignment(self, node):
+        if node.left.__class__.__name__ == "Var":
+            info = self.funcSymtab.get(node.left.name)
             if not info:
-                raise NameError(f"Variable '{node.left.name}' not declared.")
+                raise NameError("Variable '" + node.left.name + "' not declared.")
             val = self.codegen(node.right)
-            self.builder.store(val, info['addr'])
+            self.builder.store(val, info["addr"])
             return val
-        elif isinstance(node.left, MemberAccess):
-            return self.codegen_member_assignment(node.left, self.codegen(node.right))
+        elif node.left.__class__.__name__ == "MemberAccess":
+            return self.codegenMemberAssignment(node.left, self.codegen(node.right))
         raise SyntaxError("Invalid left-hand side for assignment")
 
-    def codegen_member_assignment(self, member_node, val):
-        obj_info = self.func_symtab[member_node.object_expr.name]
-        idx = self.get_member_index(obj_info['datatype_name'], member_node.member_name)
-        ptr = self.builder.gep(
-            self.builder.load(obj_info['addr']),
-            [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)],
-            name="member_ptr"
-        )
+    def codegenMemberAssignment(self, memberNode, val):
+        objInfo = self.funcSymtab[memberNode.objectExpr.name]
+        idx = self.getMemberIndex(objInfo["datatypeName"], memberNode.memberName)
+        ptr = self.builder.gep(self.builder.load(objInfo["addr"]), 
+                               [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)], 
+                               name="memberPtr")
         self.builder.store(val, ptr)
         return val
 
-    def codegen_if(self, node):
+    def codegenIf(self, node):
         cond = self.codegen(node.condition)
-        cond_bool = self.builder.icmp_unsigned('!=', cond, ir.Constant(cond.type, 0), name="ifcond")
-        then_bb = self.builder.append_basic_block("then")
-        else_bb = self.builder.append_basic_block("else") if node.else_branch else None
-        merge_bb = self.builder.append_basic_block("ifcont")
-        self.builder.cbranch(cond_bool, then_bb, else_bb if else_bb else merge_bb)
-        self.builder.position_at_start(then_bb)
-        for stmt in node.then_branch:
+        condBool = self.builder.icmp_unsigned("!=", cond, ir.Constant(cond.type, 0), name="ifcond")
+        thenBb = self.builder.append_basic_block("then")
+        elseBb = self.builder.append_basic_block("else") if node.elseBranch else None
+        mergeBb = self.builder.append_basic_block("ifcont")
+        self.builder.cbranch(condBool, thenBb, elseBb if elseBb else mergeBb)
+        self.builder.position_at_start(thenBb)
+        for stmt in node.thenBranch:
             self.codegen(stmt)
         if not self.builder.block.terminator:
-            self.builder.branch(merge_bb)
-        if node.else_branch:
-            self.builder.position_at_start(else_bb)
-            for stmt in node.else_branch:
+            self.builder.branch(mergeBb)
+        if node.elseBranch:
+            self.builder.position_at_start(elseBb)
+            for stmt in node.elseBranch:
                 self.codegen(stmt)
             if not self.builder.block.terminator:
-                self.builder.branch(merge_bb)
-        self.builder.position_at_start(merge_bb)
+                self.builder.branch(mergeBb)
+        self.builder.position_at_start(mergeBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegen_while(self, node):
-        loop_bb = self.builder.append_basic_block("loop")
-        after_bb = self.builder.append_basic_block("afterloop")
-        self.builder.branch(loop_bb)
-        self.builder.position_at_start(loop_bb)
+    def codegenWhile(self, node):
+        loopBb = self.builder.append_basic_block("loop")
+        afterBb = self.builder.append_basic_block("afterloop")
+        self.builder.branch(loopBb)
+        self.builder.position_at_start(loopBb)
         cond = self.codegen(node.condition)
-        cond_bool = self.builder.icmp_unsigned('!=', cond, ir.Constant(cond.type, 0), name="whilecond")
-        body_bb = self.builder.append_basic_block("whilebody")
-        self.builder.cbranch(cond_bool, body_bb, after_bb)
-        self.builder.position_at_start(body_bb)
+        condBool = self.builder.icmp_unsigned("!=", cond, ir.Constant(cond.type, 0), name="whilecond")
+        bodyBb = self.builder.append_basic_block("whilebody")
+        self.builder.cbranch(condBool, bodyBb, afterBb)
+        self.builder.position_at_start(bodyBb)
         for stmt in node.body:
             self.codegen(stmt)
         if not self.builder.block.terminator:
-            self.builder.branch(loop_bb)
-        self.builder.position_at_start(after_bb)
+            self.builder.branch(loopBb)
+        self.builder.position_at_start(afterBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegen_for(self, node):
+    def codegenFor(self, node):
         self.codegen(node.init)
-        loop_bb = self.builder.append_basic_block("forloop")
-        after_bb = self.builder.append_basic_block("afterfor")
-        self.builder.branch(loop_bb)
-        self.builder.position_at_start(loop_bb)
+        loopBb = self.builder.append_basic_block("forloop")
+        afterBb = self.builder.append_basic_block("afterfor")
+        self.builder.branch(loopBb)
+        self.builder.position_at_start(loopBb)
         cond = self.codegen(node.condition)
-        cond_bool = self.builder.icmp_unsigned('!=', cond, ir.Constant(cond.type, 0), name="forcond")
-        body_bb = self.builder.append_basic_block("forbody")
-        self.builder.cbranch(cond_bool, body_bb, after_bb)
-        self.builder.position_at_start(body_bb)
+        condBool = self.builder.icmp_unsigned("!=", cond, ir.Constant(cond.type, 0), name="forcond")
+        bodyBb = self.builder.append_basic_block("forbody")
+        self.builder.cbranch(condBool, bodyBb, afterBb)
+        self.builder.position_at_start(bodyBb)
         for stmt in node.body:
             self.codegen(stmt)
         self.codegen(node.increment)
-        self.builder.branch(loop_bb)
-        self.builder.position_at_start(after_bb)
+        self.builder.branch(loopBb)
+        self.builder.position_at_start(afterBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegen_do_while(self, node):
-        loop_bb = self.builder.append_basic_block("dowhileloop")
-        after_bb = self.builder.append_basic_block("afterdowhile")
-        self.builder.branch(loop_bb)
-        self.builder.position_at_start(loop_bb)
+    def codegenDoWhile(self, node):
+        loopBb = self.builder.append_basic_block("dowhileloop")
+        afterBb = self.builder.append_basic_block("afterdowhile")
+        self.builder.branch(loopBb)
+        self.builder.position_at_start(loopBb)
         for stmt in node.body:
             self.codegen(stmt)
         cond = self.codegen(node.condition)
-        cond_bool = self.builder.icmp_unsigned('!=', cond, ir.Constant(cond.type, 0), name="dowhilecond")
-        self.builder.cbranch(cond_bool, loop_bb, after_bb)
-        self.builder.position_at_start(after_bb)
+        condBool = self.builder.icmp_unsigned("!=", cond, ir.Constant(cond.type, 0), name="dowhilecond")
+        self.builder.cbranch(condBool, loopBb, afterBb)
+        self.builder.position_at_start(afterBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegen_class_declaration(self, node):
-        # Build a struct type for the class (here assuming all members are int32).
+    def codegenClassDeclaration(self, node):
         members = [ir.IntType(32) for _ in node.members]
-        self.class_struct_types[node.name] = ir.LiteralStructType(members)
+        self.classStructTypes[node.name] = ir.LiteralStructType(members)
 
-    def codegen_function(self, node):
-        func_type = ir.FunctionType(ir.IntType(32), [])
-        func = ir.Function(self.module, func_type, name=node.name)
+    def codegenFunction(self, node):
+        funcType = ir.FunctionType(ir.IntType(32), [])
+        func = ir.Function(self.module, funcType, name=node.name)
         entry = func.append_basic_block("entry")
         self.builder = ir.IRBuilder(entry)
-        self.func_symtab = {}
+        self.funcSymtab = {}
         retval = None
         for stmt in node.body:
             retval = self.codegen(stmt)

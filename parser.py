@@ -1,240 +1,236 @@
-# parser.py
-from ast import *
-from lexer import lex
-
+from tokens import Token
 class Parser:
-    def __init__(self, tokens):
+    def __init__(self, tokens, astClasses, langDef):
         self.tokens = tokens
         self.pos = 0
-        self.class_names = set()
-        self.statement_parse_map = {
-            'RETURN': self.parse_return,
-            'IF': self.parse_if,
-            'WHILE': self.parse_while,
-            'FOR': self.parse_for,
-            'DO': self.parse_do_while,
-        }
-        self.factor_parse_map = {
-            'NUMBER': self.parse_number,
-            'FLOAT_NUMBER': self.parse_float_number,
-            'STRING': self.parse_string,
-            'CHAR_LITERAL': self.parse_char_literal,
-            'ID': self.parse_identifier,
-            'LPAREN': self.parse_parenthesized_expression,
-        }
+        self.astClasses = astClasses
+        self.langDef = langDef
+        self.classNames = set()
+        self.statementParseMap = {}
+        for key, funcName in langDef["statementParseMap"].items():
+            self.statementParseMap[key] = getattr(self, funcName)
+        self.factorParseMap = {}
+        for key, value in langDef["factorParseMap"].items():
+            if isinstance(value, dict):
+                method = getattr(self, value["method"])
+                args = value["args"]
+                self.factorParseMap[key] = (lambda m=method, a=args: m(*a))
+            else:
+                self.factorParseMap[key] = getattr(self, value)
 
-    def current(self):
-        if self.pos < len(self.tokens):
-            return self.tokens[self.pos]
-        return None
-    def consume(self, token_type):
-        token = self.current()
-        if token and token.type == token_type:
+    def currentToken(self):
+        return self.tokens[self.pos] if self.pos < len(self.tokens) else None
+
+    def consumeToken(self, tokenType):
+        token = self.currentToken()
+        if token and token.tokenType == tokenType:
             self.pos += 1
             return token
-        raise SyntaxError(f"Expected token {token_type}, got {token}")
-    def parse(self):
+        raise SyntaxError("Expected token " + tokenType + ", got " + str(token))
+
+    def parseLiteral(self, tokenType, astName):
+        token = self.consumeToken(tokenType)
+        return self.astClasses[astName](token.tokenValue)
+
+    def parseProgram(self):
         functions = []
         classes = []
-        while self.current() is not None:
-            if self.current().type == 'CLASS':
-                class_decl = self.parse_class_declaration()
-                classes.append(class_decl)
-                self.class_names.add(class_decl.name)
-            elif self.current().type in ('INT', 'FLOAT', 'CHAR', 'ID') and (self.current().type != 'ID' or self.current().value != 'class'):
-                functions.append(self.parse_function())
+        while self.currentToken() is not None:
+            if self.currentToken().tokenType == "CLASS":
+                classDecl = self.parseClassDeclaration()
+                classes.append(classDecl)
+                self.classNames.add(classDecl.name)
+            elif self.currentToken().tokenType in ("INT", "FLOAT", "CHAR", "ID") and (self.currentToken().tokenType != "ID" or self.currentToken().tokenValue != "class"):
+                functions.append(self.parseFunction())
             else:
-                self.consume(self.current().type)
-        return Program(functions, classes)
-    def parse_class_declaration(self):
-        self.consume('CLASS')
-        class_name = self.consume('ID').value
-        self.consume('LBRACE')
+                self.consumeToken(self.currentToken().tokenType)
+        return self.astClasses["Program"](functions, classes)
+
+    def parseClassDeclaration(self):
+        self.consumeToken("CLASS")
+        className = self.consumeToken("ID").tokenValue
+        self.consumeToken("LBRACE")
         members = []
-        while self.current() and self.current().type != 'RBRACE':
-            member = self.parse_declaration_member()
-            if not isinstance(member, VarDecl):
+        while self.currentToken() and self.currentToken().tokenType != "RBRACE":
+            member = self.parseDeclarationMember()
+            if type(member).__name__ != "VarDecl":
                 raise SyntaxError("Class members must be variable declarations")
             members.append(member)
-        self.consume('RBRACE')
-        return ClassDecl(class_name, members)
-    def parse_declaration_member(self):
-        data_type_token = self.consume_datatype()
-        var_name = self.consume('ID').value
-        self.consume('SEMICOLON')
-        return VarDecl(var_name, None, datatype_name=data_type_token.value)
-    def parse_declaration(self):
-        data_type_token = self.consume_datatype()
-        var_name = self.consume('ID').value
-        datatype_name = data_type_token.value
-        if self.current() and self.current().type == 'EQ':
-            self.consume('EQ')
-            init_expr = self.parse_expression()
-            self.consume('SEMICOLON')
-            return VarDecl(var_name, init_expr, datatype_name=datatype_name)
-        self.consume('SEMICOLON')
-        return VarDecl(var_name, None, datatype_name=datatype_name)
-    def parse_function(self):
-        data_type_token = self.consume_datatype()
-        name = self.consume('ID').value
-        self.consume('LPAREN')
-        self.consume('RPAREN')
-        self.consume('LBRACE')
+        self.consumeToken("RBRACE")
+        return self.astClasses["ClassDecl"](className, members)
+
+    def parseDeclarationMember(self):
+        dataTypeToken = self.consumeDatatype()
+        varName = self.consumeToken("ID").tokenValue
+        self.consumeToken("SEMICOLON")
+        return self.astClasses["VarDecl"](varName, None, dataTypeToken.tokenValue)
+
+    def parseDeclaration(self):
+        dataTypeToken = self.consumeDatatype()
+        varName = self.consumeToken("ID").tokenValue
+        dataTypeName = dataTypeToken.tokenValue
+        if self.currentToken() and self.currentToken().tokenType == "EQ":
+            self.consumeToken("EQ")
+            initExpr = self.parseExpression()
+            self.consumeToken("SEMICOLON")
+            return self.astClasses["VarDecl"](varName, initExpr, dataTypeName)
+        self.consumeToken("SEMICOLON")
+        return self.astClasses["VarDecl"](varName, None, dataTypeName)
+
+    def parseFunction(self):
+        dataTypeToken = self.consumeDatatype()
+        name = self.consumeToken("ID").tokenValue
+        self.consumeToken("LPAREN")
+        self.consumeToken("RPAREN")
+        self.consumeToken("LBRACE")
         body = []
-        while self.current() and self.current().type != 'RBRACE':
-            body.append(self.parse_statement())
-        self.consume('RBRACE')
-        return Function(name, body)
-    def parse_statement(self):
-        token = self.current()
-        if token.type in self.statement_parse_map:
-            return self.statement_parse_map[token.type]()
-        elif token.type in ('INT', 'FLOAT', 'CHAR') or (token.type == 'ID' and token.value == 'string'):
-            return self.parse_declaration()
+        while self.currentToken() and self.currentToken().tokenType != "RBRACE":
+            body.append(self.parseStatement())
+        self.consumeToken("RBRACE")
+        return self.astClasses["Function"](name, body)
+
+    def parseStatement(self):
+        token = self.currentToken()
+        if token.tokenType in self.statementParseMap:
+            return self.statementParseMap[token.tokenType]()
+        elif token.tokenType in ("INT", "FLOAT", "CHAR") or (token.tokenType == "ID" and token.tokenValue == "string"):
+            return self.parseDeclaration()
         else:
-            expr = self.parse_expression()
-            self.consume('SEMICOLON')
-            return ExpressionStatement(expr)
-    def consume_datatype(self):
-        token = self.current()
-        if token.type in ('INT', 'FLOAT', 'CHAR') or (token.type == 'ID' and (token.value in self.class_names or token.value == 'string')):
+            expr = self.parseExpression()
+            self.consumeToken("SEMICOLON")
+            return self.astClasses["ExpressionStatement"](expr)
+
+    def consumeDatatype(self):
+        token = self.currentToken()
+        if token.tokenType in ("INT", "FLOAT", "CHAR") or (token.tokenType == "ID" and (token.tokenValue in self.classNames or token.tokenValue == "string")):
             self.pos += 1
             return token
-        raise SyntaxError(f"Expected datatype, got {token}")
-    def parse_return(self):
-        self.consume('RETURN')
-        expr = self.parse_expression()
-        self.consume('SEMICOLON')
-        return Return(expr)
-    def parse_expression(self):
-        node = self.parse_assignment()
-        return node
-    def parse_assignment(self):
-        node = self.parse_comparison()
-        if self.current() and self.current().type == 'EQ':
-            self.consume('EQ')
-            right = self.parse_assignment()
-            if isinstance(node, MemberAccess) or isinstance(node, Var):
-                return Assign(node, right)
+        raise SyntaxError("Expected datatype, got " + str(token))
+
+    def parseReturn(self):
+        self.consumeToken("RETURN")
+        expr = self.parseExpression()
+        self.consumeToken("SEMICOLON")
+        return self.astClasses["Return"](expr)
+
+    def parseExpression(self):
+        return self.parseAssignment()
+
+    def parseAssignment(self):
+        node = self.parseComparison()
+        if self.currentToken() and self.currentToken().tokenType == "EQ":
+            self.consumeToken("EQ")
+            right = self.parseAssignment()
+            if node.__class__.__name__ in ("MemberAccess", "Var"):
+                return self.astClasses["Assign"](node, right)
             raise SyntaxError("Invalid left-hand side for assignment")
         return node
-    def parse_comparison(self):
-        node = self.parse_additive_expression()
-        while self.current() and self.current().type in ('EQEQ', 'NEQ', 'LT', 'GT', 'LTE', 'GTE'):
-            op_token = self.consume(self.current().type)
-            op = op_token.type
-            right = self.parse_additive_expression()
-            node = BinOp(op, node, right)
+
+    def parseBinary(self, lowerFn, ops, useTokenValue=True):
+        node = lowerFn()
+        while self.currentToken() and self.currentToken().tokenType in ops:
+            opToken = self.consumeToken(self.currentToken().tokenType)
+            op = opToken.tokenValue if useTokenValue else opToken.tokenType
+            node = self.astClasses["BinOp"](op, node, lowerFn())
         return node
-    def parse_additive_expression(self):
-        node = self.parse_multiplicative_expression()
-        while self.current() and self.current().type in ('PLUS', 'MINUS'):
-            op = self.consume(self.current().type).value
-            right = self.parse_multiplicative_expression()
-            node = BinOp(op, node, right)
+
+    def parseComparison(self):
+        return self.parseBinary(self.parseAdditiveExpression, {"EQEQ", "NEQ", "LT", "GT", "LTE", "GTE"}, False)
+
+    def parseAdditiveExpression(self):
+        return self.parseBinary(self.parseMultiplicativeExpression, {"PLUS", "MINUS"})
+
+    def parseMultiplicativeExpression(self):
+        return self.parseBinary(self.parseFactor, {"MULT", "DIV", "MOD"})
+
+    def parseFactor(self):
+        token = self.currentToken()
+        if token.tokenType in self.factorParseMap:
+            return self.factorParseMap[token.tokenType]()
+        raise SyntaxError("Unexpected token: " + str(token))
+
+    def parseIdentifier(self):
+        token = self.consumeToken("ID")
+        name = token.tokenValue
+        if self.currentToken() and self.currentToken().tokenType == "DOT":
+            self.consumeToken("DOT")
+            memberName = self.consumeToken("ID").tokenValue
+            return self.astClasses["MemberAccess"](self.astClasses["Var"](name), memberName)
+        elif self.currentToken() and self.currentToken().tokenType == "LPAREN":
+            return self.parseFunctionCall(name)
+        return self.astClasses["Var"](name)
+
+    def parseParenthesizedExpression(self):
+        self.consumeToken("LPAREN")
+        node = self.parseExpression()
+        self.consumeToken("RPAREN")
         return node
-    def parse_multiplicative_expression(self):
-        node = self.parse_factor()
-        while self.current() and self.current().type in ('MULT', 'DIV', 'MOD'):
-            op = self.consume(self.current().type).value
-            right = self.parse_factor()
-            node = BinOp(op, node, right)
-        return node
-    def parse_factor(self):
-        token = self.current()
-        if token.type in self.factor_parse_map:
-            return self.factor_parse_map[token.type]()
-        raise SyntaxError(f"Unexpected token: {token}")
-    def parse_number(self):
-        token = self.consume('NUMBER')
-        return Num(token.value)
-    def parse_float_number(self):
-        token = self.consume('FLOAT_NUMBER')
-        return FloatNum(token.value)
-    def parse_string(self):
-        token = self.consume('STRING')
-        return String(token.value)
-    def parse_char_literal(self):
-        token = self.consume('CHAR_LITERAL')
-        return Char(token.value)
-    def parse_identifier(self):
-        token = self.consume('ID')
-        name = token.value
-        if self.current() and self.current().type == 'DOT':
-            self.consume('DOT')
-            member_name = self.consume('ID').value
-            return MemberAccess(Var(name), member_name)
-        elif self.current() and self.current().type == 'LPAREN':
-            return self.parse_function_call(name)
-        return Var(name)
-    def parse_parenthesized_expression(self):
-        self.consume('LPAREN')
-        node = self.parse_expression()
-        self.consume('RPAREN')
-        return node
-    def parse_function_call(self, func_name):
-        self.consume('LPAREN')
+
+    def parseFunctionCall(self, name):
+        self.consumeToken("LPAREN")
         args = []
-        if self.current() and self.current().type != 'RPAREN':
-            args.append(self.parse_expression())
-            while self.current() and self.current().type == 'COMMA':
-                self.consume('COMMA')
-                args.append(self.parse_expression())
-        self.consume('RPAREN')
-        return FunctionCall(func_name, args)
-    def parse_if(self):
-        self.consume('IF')
-        if self.current().type == 'LPAREN':
-            self.consume('LPAREN')
-            condition = self.parse_expression()
-            self.consume('RPAREN')
+        if self.currentToken() and self.currentToken().tokenType != "RPAREN":
+            args.append(self.parseExpression())
+            while self.currentToken() and self.currentToken().tokenType == "COMMA":
+                self.consumeToken("COMMA")
+                args.append(self.parseExpression())
+        self.consumeToken("RPAREN")
+        return self.astClasses["FunctionCall"](name, args)
+
+    def parseIf(self):
+        self.consumeToken("IF")
+        if self.currentToken().tokenType == "LPAREN":
+            self.consumeToken("LPAREN")
+            condition = self.parseExpression()
+            self.consumeToken("RPAREN")
         else:
-            condition = self.parse_expression()
-        then_branch = self.parse_block()
-        else_branch = None
-        if self.current() and self.current().type == 'ELSE':
-            self.consume('ELSE')
-            if self.current() and self.current().type == 'IF':
-                else_branch = [self.parse_if()]
-            else:
-                else_branch = self.parse_block()
-        return If(condition, then_branch, else_branch)
-    def parse_while(self):
-        self.consume('WHILE')
-        if self.current().type == 'LPAREN':
-            self.consume('LPAREN')
-            condition = self.parse_expression()
-            self.consume('RPAREN')
+            condition = self.parseExpression()
+        thenBranch = self.parseBlock()
+        elseBranch = None
+        if self.currentToken() and self.currentToken().tokenType == "ELSE":
+            self.consumeToken("ELSE")
+            elseBranch = [self.parseIf()] if self.currentToken() and self.currentToken().tokenType == "IF" else self.parseBlock()
+        return self.astClasses["If"](condition, thenBranch, elseBranch)
+
+    def parseWhile(self):
+        self.consumeToken("WHILE")
+        if self.currentToken().tokenType == "LPAREN":
+            self.consumeToken("LPAREN")
+            condition = self.parseExpression()
+            self.consumeToken("RPAREN")
         else:
-            condition = self.parse_expression()
-        body = self.parse_block()
-        return While(condition, body)
-    def parse_for(self):
-        self.consume('FOR')
-        self.consume('LPAREN')
-        init = self.parse_statement()
-        condition = self.parse_expression()
-        self.consume('SEMICOLON')
-        increment = self.parse_expression()
-        self.consume('RPAREN')
-        body = self.parse_block()
-        return For(init, condition, increment, body)
-    def parse_do_while(self):
-        self.consume('DO')
-        body = self.parse_block()
-        self.consume('WHILE')
-        if self.current().type == 'LPAREN':
-            self.consume('LPAREN')
-            condition = self.parse_expression()
-            self.consume('RPAREN')
+            condition = self.parseExpression()
+        body = self.parseBlock()
+        return self.astClasses["While"](condition, body)
+
+    def parseFor(self):
+        self.consumeToken("FOR")
+        self.consumeToken("LPAREN")
+        init = self.parseStatement()
+        condition = self.parseExpression()
+        self.consumeToken("SEMICOLON")
+        increment = self.parseExpression()
+        self.consumeToken("RPAREN")
+        body = self.parseBlock()
+        return self.astClasses["For"](init, condition, increment, body)
+
+    def parseDoWhile(self):
+        self.consumeToken("DO")
+        body = self.parseBlock()
+        self.consumeToken("WHILE")
+        if self.currentToken().tokenType == "LPAREN":
+            self.consumeToken("LPAREN")
+            condition = self.parseExpression()
+            self.consumeToken("RPAREN")
         else:
-            condition = self.parse_expression()
-        self.consume('SEMICOLON')
-        return DoWhile(body, condition)
-    def parse_block(self):
-        self.consume('LBRACE')
+            condition = self.parseExpression()
+        self.consumeToken("SEMICOLON")
+        return self.astClasses["DoWhile"](body, condition)
+
+    def parseBlock(self):
+        self.consumeToken("LBRACE")
         stmts = []
-        while self.current() and self.current().type != 'RBRACE':
-            stmts.append(self.parse_statement())
-        self.consume('RBRACE')
+        while self.currentToken() and self.currentToken().tokenType != "RBRACE":
+            stmts.append(self.parseStatement())
+        self.consumeToken("RBRACE")
         return stmts
