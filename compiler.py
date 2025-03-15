@@ -57,26 +57,23 @@ class Lexer:
         return tokenList
 
 class Parser:
-    def __init__(self, tokens, astClasses):
+    def __init__(self, tokens, astClasses, langDef):
         self.tokens = tokens
         self.pos = 0
         self.astClasses = astClasses
+        self.langDef = langDef
         self.classNames = set()
-        self.statementParseMap = {
-            "RETURN": self.parseReturn,
-            "IF": self.parseIf,
-            "WHILE": self.parseWhile,
-            "FOR": self.parseFor,
-            "DO": self.parseDoWhile
-        }
-        self.factorParseMap = {
-            "NUMBER": lambda: self.parseLiteral("NUMBER", "Num"),
-            "FLOAT_NUMBER": lambda: self.parseLiteral("FLOAT_NUMBER", "FloatNum"),
-            "STRING": lambda: self.parseLiteral("STRING", "String"),
-            "CHAR_LITERAL": lambda: self.parseLiteral("CHAR_LITERAL", "Char"),
-            "ID": self.parseIdentifier,
-            "LPAREN": self.parseParenthesizedExpression
-        }
+        self.statementParseMap = {}
+        for key, funcName in langDef["statementParseMap"].items():
+            self.statementParseMap[key] = getattr(self, funcName)
+        self.factorParseMap = {}
+        for key, value in langDef["factorParseMap"].items():
+            if isinstance(value, dict):
+                method = getattr(self, value["method"])
+                args = value["args"]
+                self.factorParseMap[key] = (lambda m=method, a=args: m(*a))
+            else:
+                self.factorParseMap[key] = getattr(self, value)
     def currentToken(self):
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
     def consumeToken(self, tokenType):
@@ -514,7 +511,7 @@ class Compiler:
         self.lexer = Lexer(self.tokens)
     def compileSource(self, sourceCode, outputExe):
         tokens = self.lexer.lex(sourceCode)
-        parser = Parser(tokens, self.astFactory.astClasses)
+        parser = Parser(tokens, self.astFactory.astClasses, self.langDef)
         ast = parser.parseProgram()
         codegen = CodeGen(self.langDef)
         codegen.programNode = ast
