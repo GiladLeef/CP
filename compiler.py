@@ -277,24 +277,9 @@ class CodeGen:
         self.declarePrintFunc()
         self.binOpMap = langDef["operators"]["binOpMap"]
         self.compMap = langDef["operators"]["compMap"]
-        self.dispatch = {
-            "Return": lambda n: self.builder.ret(self.codegen(n.expr)),
-            "ExpressionStatement": lambda n: self.codegen(n.expr),
-            "Num": lambda n: ir.Constant(ir.IntType(32), n.value),
-            "FloatNum": lambda n: ir.Constant(ir.FloatType(), float(n.value)),
-            "String": lambda n: self.createStringConstant(n.value),
-            "Char": lambda n: ir.Constant(ir.IntType(8), ord(n.value)),
-            "Var": self.codegenVar,
-            "BinOp": self.codegenBinop,
-            "FunctionCall": self.codegenFunctionCall,
-            "MemberAccess": self.codegenMemberAccess,
-            "Assign": self.codegenAssignment,
-            "If": self.codegenIf,
-            "While": self.codegenWhile,
-            "For": self.codegenFor,
-            "DoWhile": self.codegenDoWhile,
-            "VarDecl": self.codegenVarDecl
-        }
+        self.dispatch = {}
+        for key, methodName in langDef["dispatchMap"].items():
+            self.dispatch[key] = getattr(self, methodName)
     def declarePrintFunc(self):
         printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
         self.printFunc = ir.Function(self.module, printType, name="printf")
@@ -351,6 +336,18 @@ class CodeGen:
         if nodeType in self.dispatch:
             return self.dispatch[nodeType](node)
         raise NotImplementedError("Codegen not implemented for " + nodeType)
+    def codegenReturn(self, node):
+        return self.builder.ret(self.codegen(node.expr))
+    def codegenExpressionStatement(self, node):
+        return self.codegen(node.expr)
+    def codegenNum(self, node):
+        return ir.Constant(ir.IntType(32), node.value)
+    def codegenFloatNum(self, node):
+        return ir.Constant(ir.FloatType(), float(node.value))
+    def codegenString(self, node):
+        return self.createStringConstant(node.value)
+    def codegenChar(self, node):
+        return ir.Constant(ir.IntType(8), ord(node.value))
     def codegenVarDecl(self, node):
         basicTypes = {"int": ir.IntType(32), "float": ir.FloatType(), "char": ir.IntType(8), "string": ir.PointerType(ir.IntType(8))}
         if node.datatypeName in basicTypes:
