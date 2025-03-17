@@ -12,7 +12,6 @@ class CodeGen:
         self.declarePrintFunc()
         self.binOpMap = langDef["operators"]["binOpMap"]
         self.compMap = langDef["operators"]["compMap"]
-
         self.datatypes = {}
         for key, value in langDef["datatypes"].items():
             self.datatypes[key] = self.resolveType(value)
@@ -30,9 +29,6 @@ class CodeGen:
 
             return typeClass(*validParams) if validParams else typeClass()  
         return typeClass()  
-
-    def getLLVMType(self, type_name):
-        return self.datatypes.get(type_name, None)
 
     def declarePrintFunc(self):
         printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
@@ -300,13 +296,14 @@ class CodeGen:
         self.classStructTypes[node.name] = structType
         for method in node.methods:
             self.MethodDecl(method)
+
     def MethodDecl(self, node):
         if node.className not in self.classStructTypes:
             raise ValueError("Unknown class in method: " + node.className)
         classType = self.classStructTypes[node.className]
         paramTypes = [ir.PointerType(classType)]
         basicTypes = {
-            name: self.getLLVMType(type_info)
+            name: self.datatypes.get(type_info, None)
             for name, type_info in self.datatypes.items()
         }
 
