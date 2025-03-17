@@ -1,10 +1,10 @@
-from lexer import Token
+from lexer import Token, AstFactory
 
 class Parser:
-    def __init__(self, tokens, astClasses, langDef):
+    def __init__(self, tokens, langDef):
         self.tokens = tokens
         self.pos = 0
-        self.astClasses = astClasses
+        self.astClasses = AstFactory(langDef).astClasses
         self.langDef = langDef
         self.classNames = set()
         self.statementParseMap = {}

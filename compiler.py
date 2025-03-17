@@ -2,7 +2,6 @@ import json
 import subprocess
 import os
 import sys
-from astree import AstFactory
 from lexer import Lexer
 from parser import Parser
 from codegen import CodeGen
@@ -11,13 +10,12 @@ from llvmlite import binding as llvm
 class Compiler:
     def __init__(self, langFile="lang.json"):
         self.langDef = json.load(open(langFile, "r"))
-        self.astFactory = AstFactory(self.langDef)
         self.tokens = [(t["type"], t["regex"]) for t in self.langDef["tokens"]]
         self.lexer = Lexer(self.tokens)
 
     def compileSource(self, sourceCode, outputExe):
         tokens = self.lexer.lex(sourceCode)
-        parser = Parser(tokens, self.astFactory.astClasses, self.langDef)
+        parser = Parser(tokens, self.langDef)
         ast = parser.parseProgram()
         codegen = CodeGen(self.langDef)
         codegen.programNode = ast
