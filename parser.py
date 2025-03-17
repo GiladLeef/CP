@@ -1,24 +1,25 @@
 from lexer import Token, AstFactory
+from lang import language
 
 class Parser:
-    def __init__(self, tokens, langDef):
+    def __init__(self, language, tokens):
+        self.language = language
         self.tokens = tokens
         self.pos = 0
-        self.astClasses = AstFactory(langDef).astClasses
-        self.langDef = langDef
+        self.astClasses = AstFactory(language).astClasses
         self.classNames = set()
         self.statementParseMap = {}
-        for key, funcName in langDef["statementParseMap"].items():
+        for key, funcName in language["statementParseMap"].items():
             self.statementParseMap[key] = getattr(self, funcName)
         self.factorParseMap = {}
-        for key, value in langDef["factorParseMap"].items():
+        for key, value in language["factorParseMap"].items():
             if isinstance(value, dict):
                 method = getattr(self, value["method"])
                 args = value["args"]
                 self.factorParseMap[key] = (lambda m=method, a=args: m(*a))
             else:
                 self.factorParseMap[key] = getattr(self, value)
-        self.op_precedences = self.langDef["operators"]["precedences"]
+        self.op_precedences = language["operators"]["precedences"]
 
     def currentToken(self):
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -42,7 +43,8 @@ class Parser:
                 classDecl = self.parseClassDeclaration()
                 classes.append(classDecl)
                 self.classNames.add(classDecl.name)
-            elif self.currentToken().tokenType in ("INT", "FLOAT", "CHAR", "ID") and (self.currentToken().tokenType != "ID" or self.currentToken().tokenValue != "class"):
+            elif self.currentToken().tokenType in ("INT", "FLOAT", "CHAR", "ID") and \
+                 (self.currentToken().tokenType != "ID" or self.currentToken().tokenValue != "class"):
                 functions.append(self.parseFunction())
             else:
                 self.consumeToken(self.currentToken().tokenType)
@@ -118,7 +120,8 @@ class Parser:
         token = self.currentToken()
         if token.tokenType in self.statementParseMap:
             return self.statementParseMap[token.tokenType]()
-        elif token.tokenType in ("INT", "FLOAT", "CHAR") or (token.tokenType == "ID" and (token.tokenValue in self.classNames or token.tokenValue == "string")):
+        elif token.tokenType in ("INT", "FLOAT", "CHAR") or \
+             (token.tokenType == "ID" and (token.tokenValue in self.classNames or token.tokenValue == "string")):
             return self.parseDeclaration()
         else:
             expr = self.parseExpression()
@@ -127,7 +130,8 @@ class Parser:
 
     def consumeDatatype(self):
         token = self.currentToken()
-        if token.tokenType in ("INT", "FLOAT", "CHAR") or (token.tokenType == "ID" and (token.tokenValue in self.classNames or token.tokenValue == "string")):
+        if token.tokenType in ("INT", "FLOAT", "CHAR") or \
+           (token.tokenType == "ID" and (token.tokenValue in self.classNames or token.tokenValue == "string")):
             self.pos += 1
             return token
         raise SyntaxError("Expected datatype, got " + str(token))
@@ -163,7 +167,7 @@ class Parser:
             op_prec = self.op_precedences[token_type]
             self.consumeToken(token_type)
             right = self.parseBinaryExpression(op_prec + 1)
-            if token_type in self.langDef["operators"]["compMap"]:
+            if token_type in self.language["operators"]["compMap"]:
                 op = token_type
             else:
                 op = token.tokenValue

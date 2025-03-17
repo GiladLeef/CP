@@ -2,7 +2,8 @@ from llvmlite import binding as llvm
 from llvmlite import ir
 
 class CodeGen:
-    def __init__(self, langDef):
+    def __init__(self, language):
+        self.language = language
         self.module = ir.Module(name="module")
         self.builder = None
         self.funcSymtab = {}
@@ -10,10 +11,10 @@ class CodeGen:
         self.programNode = None
         self.classStructTypes = {}
         self.declarePrintFunc()
-        self.binOpMap = langDef["operators"]["binOpMap"]
-        self.compMap = langDef["operators"]["compMap"]
+        self.binOpMap = language["operators"]["binOpMap"]
+        self.compMap = language["operators"]["compMap"]
         self.datatypes = {}
-        for key, value in langDef["datatypes"].items():
+        for key, value in language["datatypes"].items():
             self.datatypes[key] = self.resolveType(value)
 
     def resolveType(self, type_expr):
@@ -300,10 +301,7 @@ class CodeGen:
             raise ValueError("Unknown class in method: " + node.className)
         classType = self.classStructTypes[node.className]
         paramTypes = [ir.PointerType(classType)]
-        basicTypes = {
-            name: self.datatypes.get(type_info, None)
-            for name, type_info in self.datatypes.items()
-        }
+        basicTypes = {name: self.datatypes.get(type_info, None) for name, type_info in self.datatypes.items()}
         for param in node.parameters:
             dt = param.datatypeName
             if dt in basicTypes:

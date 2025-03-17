@@ -1,13 +1,13 @@
 import re
 
 class AstFactory:
-    def __init__(self, langDef):
-        self.langDef = langDef
+    def __init__(self, language):
+        self.language = language
         self.astClasses = {}
         self.createAstClasses()
 
     def createAstClasses(self):
-        for node in self.langDef["astNodes"]:
+        for node in self.language["astnodes"]:
             self.astClasses[node["name"]] = self.createAstClass(node["name"], node["fields"])
 
     def createAstClass(self, name, fields):
