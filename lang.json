@@ -95,23 +95,5 @@
     "CHAR_LITERAL": { "method": "parseLiteral", "args": ["CHAR_LITERAL", "Char"] },
     "ID": "parseIdentifier",
     "LPAREN": "parseParenthesizedExpression"
-  },
-  "dispatchMap": {
-    "Return": "codegenReturn",
-    "ExpressionStatement": "codegenExpressionStatement",
-    "Num": "codegenNum",
-    "FloatNum": "codegenFloatNum",
-    "String": "codegenString",
-    "Char": "codegenChar",
-    "Var": "codegenVar",
-    "BinOp": "codegenBinop",
-    "FunctionCall": "codegenFunctionCall",
-    "MemberAccess": "codegenMemberAccess",
-    "Assign": "codegenAssignment",
-    "If": "codegenIf",
-    "While": "codegenWhile",
-    "For": "codegenFor",
-    "DoWhile": "codegenDoWhile",
-    "VarDecl": "codegenVarDecl"
   }
 }
