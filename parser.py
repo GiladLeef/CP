@@ -1,5 +1,4 @@
 from lexer import Token, AstFactory
-from lang import language
 
 class Parser:
     def __init__(self, language, tokens):
