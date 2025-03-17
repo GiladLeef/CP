@@ -12,9 +12,6 @@ class CodeGen:
         self.declarePrintFunc()
         self.binOpMap = langDef["operators"]["binOpMap"]
         self.compMap = langDef["operators"]["compMap"]
-        self.dispatch = {}
-        for key, methodName in langDef["dispatchMap"].items():
-            self.dispatch[key] = getattr(self, methodName)
 
     def declarePrintFunc(self):
         printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
@@ -26,7 +23,7 @@ class CodeGen:
             for cls in node.classes:
                 self.codegenClassDeclaration(cls)
             for func in node.functions:
-                self.codegenFunction(func)
+                self.Function(func)
         return self.module
 
     def createStringConstant(self, s):
@@ -76,29 +73,30 @@ class CodeGen:
 
     def codegen(self, node):
         nodeType = node.__class__.__name__
-        if nodeType in self.dispatch:
-            return self.dispatch[nodeType](node)
-        raise NotImplementedError("Codegen not implemented for " + nodeType)
+        method = getattr(self, nodeType, None)
+        if method is None:
+            raise NotImplementedError("Codegen not implemented for " + nodeType)
+        return method(node)
 
-    def codegenReturn(self, node):
+    def Return(self, node):
         return self.builder.ret(self.codegen(node.expr))
 
-    def codegenExpressionStatement(self, node):
+    def ExpressionStatement(self, node):
         return self.codegen(node.expr)
 
-    def codegenNum(self, node):
+    def Num(self, node):
         return ir.Constant(ir.IntType(32), node.value)
 
-    def codegenFloatNum(self, node):
+    def FloatNum(self, node):
         return ir.Constant(ir.FloatType(), float(node.value))
 
-    def codegenString(self, node):
+    def String(self, node):
         return self.createStringConstant(node.value)
 
-    def codegenChar(self, node):
+    def Char(self, node):
         return ir.Constant(ir.IntType(8), ord(node.value))
 
-    def codegenVarDecl(self, node):
+    def VarDecl(self, node):
         basicTypes = {
             "int": ir.IntType(32),
             "float": ir.FloatType(),
@@ -117,7 +115,7 @@ class CodeGen:
         self.funcSymtab[node.name] = {"addr": addr, "datatypeName": node.datatypeName}
         return addr
 
-    def codegenBinop(self, node):
+    def BinOp(self, node):
         if node.op in self.binOpMap:
             intOp, floatOp, resName = self.binOpMap[node.op]
             return self.genArith(node, intOp, floatOp, resName)
@@ -126,18 +124,18 @@ class CodeGen:
             return self.genCompare(node, intCmp, floatCmp, resName)
         raise ValueError("Unknown binary operator " + node.op)
 
-    def codegenVar(self, node):
+    def Var(self, node):
         info = self.funcSymtab.get(node.name)
         if info:
             return self.builder.load(info["addr"], name=node.name)
         raise NameError("Undefined variable: " + node.name)
 
-    def codegenFunctionCall(self, node):
+    def FunctionCall(self, node):
         if node.name == "print":
-            return self.codegenPrintCall(node)
+            return self.PrintCall(node)
         raise NameError("Unknown function: " + node.name)
 
-    def codegenPrintCall(self, node):
+    def PrintCall(self, node):
         fmtParts = []
         llvmArgs = []
         for arg in node.args:
@@ -158,7 +156,7 @@ class CodeGen:
         llvmFmt = self.createStringConstant(fmtStr)
         return self.builder.call(self.printFunc, [llvmFmt] + llvmArgs)
 
-    def codegenMemberAccess(self, node):
+    def MemberAccess(self, node):
         objInfo = self.funcSymtab[node.objectExpr.name]
         idx = self.getMemberIndex(objInfo["datatypeName"], node.memberName)
         ptr = self.builder.gep(self.builder.load(objInfo["addr"]), 
@@ -166,7 +164,7 @@ class CodeGen:
                                name="memberPtr")
         return self.builder.load(ptr, name=node.memberName)
 
-    def codegenAssignment(self, node):
+    def Assign(self, node):
         if node.left.__class__.__name__ == "Var":
             info = self.funcSymtab.get(node.left.name)
             if not info:
@@ -178,7 +176,7 @@ class CodeGen:
             return self.codegenMemberAssignment(node.left, self.codegen(node.right))
         raise SyntaxError("Invalid left-hand side for assignment")
 
-    def codegenMemberAssignment(self, memberNode, val):
+    def MemberAssignment(self, memberNode, val):
         objInfo = self.funcSymtab[memberNode.objectExpr.name]
         idx = self.getMemberIndex(objInfo["datatypeName"], memberNode.memberName)
         ptr = self.builder.gep(self.builder.load(objInfo["addr"]), 
@@ -187,7 +185,7 @@ class CodeGen:
         self.builder.store(val, ptr)
         return val
 
-    def codegenIf(self, node):
+    def If(self, node):
         cond = self.codegen(node.condition)
         condBool = self.builder.icmp_unsigned("!=", cond, ir.Constant(cond.type, 0), name="ifcond")
         thenBb = self.builder.append_basic_block("then")
@@ -208,7 +206,7 @@ class CodeGen:
         self.builder.position_at_start(mergeBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegenWhile(self, node):
+    def While(self, node):
         loopBb = self.builder.append_basic_block("loop")
         afterBb = self.builder.append_basic_block("afterloop")
         self.builder.branch(loopBb)
@@ -225,7 +223,7 @@ class CodeGen:
         self.builder.position_at_start(afterBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegenFor(self, node):
+    def For(self, node):
         self.codegen(node.init)
         loopBb = self.builder.append_basic_block("forloop")
         afterBb = self.builder.append_basic_block("afterfor")
@@ -243,7 +241,7 @@ class CodeGen:
         self.builder.position_at_start(afterBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegenDoWhile(self, node):
+    def DoWhile(self, node):
         loopBb = self.builder.append_basic_block("dowhileloop")
         afterBb = self.builder.append_basic_block("afterdowhile")
         self.builder.branch(loopBb)
@@ -256,11 +254,11 @@ class CodeGen:
         self.builder.position_at_start(afterBb)
         return ir.Constant(ir.IntType(32), 0)
 
-    def codegenClassDeclaration(self, node):
+    def ClassDeclaration(self, node):
         members = [ir.IntType(32) for _ in node.members]
         self.classStructTypes[node.name] = ir.LiteralStructType(members)
 
-    def codegenFunction(self, node):
+    def Function(self, node):
         funcType = ir.FunctionType(ir.IntType(32), [])
         func = ir.Function(self.module, funcType, name=node.name)
         entry = func.append_basic_block("entry")
