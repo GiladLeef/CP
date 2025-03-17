@@ -9,9 +9,31 @@ class CodeGen:
         self.stringCounter = 0
         self.programNode = None
         self.classStructTypes = {}
+        self.langDef = langDef
         self.declarePrintFunc()
         self.binOpMap = langDef["operators"]["binOpMap"]
         self.compMap = langDef["operators"]["compMap"]
+
+        self.datatypes = {}
+        for key, value in langDef["datatypes"].items():
+            self.datatypes[key] = self.resolveType(value)
+
+    def resolveType(self, type_expr):
+        type_name = type_expr.split("(")[0].strip()
+        params = type_expr[type_expr.index("(") + 1:type_expr.index(")")].split(",") if "(" in type_expr else []
+        typeClass = getattr(ir, type_name)  
+        if params:
+            validParams = []
+            for param in params:
+                stripped_param = param.strip()
+                if stripped_param.isdigit():  
+                    validParams.append(int(stripped_param))  
+
+            return typeClass(*validParams) if validParams else typeClass()  
+        return typeClass()  
+
+    def getLLVMType(self, type_name):
+        return self.datatypes.get(type_name, None)
 
     def declarePrintFunc(self):
         printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
@@ -21,7 +43,7 @@ class CodeGen:
         if node.__class__.__name__ == "Program":
             self.programNode = node
             for cls in node.classes:
-                self.codegenClassDeclaration(cls)
+                self.ClassDeclaration(cls)
             for func in node.functions:
                 self.Function(func)
         return self.module
@@ -41,8 +63,8 @@ class CodeGen:
     def getMemberIndex(self, className, memberName):
         for cls in self.programNode.classes:
             if cls.name == className:
-                for i, member in enumerate(cls.members):
-                    if member.name == memberName:
+                for i, field in enumerate(cls.fields):
+                    if field.name == memberName:
                         return i
         raise NameError("Member '" + memberName + "' not found in class '" + className + "'.")
 
@@ -97,19 +119,15 @@ class CodeGen:
         return ir.Constant(ir.IntType(8), ord(node.value))
 
     def VarDecl(self, node):
-        basicTypes = {
-            "int": ir.IntType(32),
-            "float": ir.FloatType(),
-            "char": ir.IntType(8),
-            "string": ir.PointerType(ir.IntType(8))
-        }
+        basicTypes = {"int": ir.IntType(32), "float": ir.FloatType(), "char": ir.IntType(8), "string": ir.PointerType(ir.IntType(8))}
         if node.datatypeName in basicTypes:
             varType = basicTypes[node.datatypeName]
+            addr = self.builder.alloca(varType, name=node.name)
         elif node.datatypeName in self.classStructTypes:
-            varType = ir.PointerType(self.classStructTypes[node.datatypeName])
+            structType = self.classStructTypes[node.datatypeName]
+            addr = self.builder.alloca(structType, name=node.name)
         else:
             raise ValueError("Unknown datatype: " + node.datatypeName)
-        addr = self.builder.alloca(varType, name=node.name)
         if node.init:
             self.builder.store(self.codegen(node.init), addr)
         self.funcSymtab[node.name] = {"addr": addr, "datatypeName": node.datatypeName}
@@ -131,9 +149,28 @@ class CodeGen:
         raise NameError("Undefined variable: " + node.name)
 
     def FunctionCall(self, node):
-        if node.name == "print":
-            return self.PrintCall(node)
-        raise NameError("Unknown function: " + node.name)
+        if node.callee.__class__.__name__ == "Var":
+            if node.callee.name == "print":
+                return self.PrintCall(node)
+            raise NameError("Unknown function: " + node.callee.name)
+        elif node.callee.__class__.__name__ == "MemberAccess":
+            obj = self.funcSymtab[node.callee.objectExpr.name]["addr"]
+            methodName = node.callee.memberName
+            info = self.funcSymtab.get(node.callee.objectExpr.name)
+            if not info:
+                raise NameError("Undefined variable: " + node.callee.objectExpr.name)
+            className = info["datatypeName"]
+            qualifiedName = f"{className}_{methodName}"
+            llvmArgs = [obj]
+            for arg in node.args:
+                llvmArgs.append(self.codegen(arg))
+            func = self.module.get_global(qualifiedName)
+            if not func:
+                raise NameError("Method " + qualifiedName + " not defined.")
+            return self.builder.call(func, llvmArgs)
+
+        else:
+            raise SyntaxError("Invalid function call callee.")
 
     def PrintCall(self, node):
         fmtParts = []
@@ -159,9 +196,7 @@ class CodeGen:
     def MemberAccess(self, node):
         objInfo = self.funcSymtab[node.objectExpr.name]
         idx = self.getMemberIndex(objInfo["datatypeName"], node.memberName)
-        ptr = self.builder.gep(self.builder.load(objInfo["addr"]), 
-                               [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)], 
-                               name="memberPtr")
+        ptr = self.builder.gep(objInfo["addr"], [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)], name="memberPtr")
         return self.builder.load(ptr, name=node.memberName)
 
     def Assign(self, node):
@@ -173,15 +208,13 @@ class CodeGen:
             self.builder.store(val, info["addr"])
             return val
         elif node.left.__class__.__name__ == "MemberAccess":
-            return self.codegenMemberAssignment(node.left, self.codegen(node.right))
+            return self.MemberAssignment(node.left, self.codegen(node.right))
         raise SyntaxError("Invalid left-hand side for assignment")
 
     def MemberAssignment(self, memberNode, val):
         objInfo = self.funcSymtab[memberNode.objectExpr.name]
         idx = self.getMemberIndex(objInfo["datatypeName"], memberNode.memberName)
-        ptr = self.builder.gep(self.builder.load(objInfo["addr"]), 
-                               [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)], 
-                               name="memberPtr")
+        ptr = self.builder.gep(objInfo["addr"], [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)], name="memberPtr")
         self.builder.store(val, ptr)
         return val
 
@@ -255,8 +288,51 @@ class CodeGen:
         return ir.Constant(ir.IntType(32), 0)
 
     def ClassDeclaration(self, node):
-        members = [ir.IntType(32) for _ in node.members]
-        self.classStructTypes[node.name] = ir.LiteralStructType(members)
+        fieldTypes = []
+        basicTypes = {"int": ir.IntType(32), "float": ir.FloatType(), "char": ir.IntType(8), "string": ir.PointerType(ir.IntType(8))}
+        for field in node.fields:
+            if field.datatypeName in basicTypes:
+                fieldTypes.append(basicTypes[field.datatypeName])
+            elif field.datatypeName in self.classStructTypes:
+                fieldTypes.append(self.classStructTypes[field.datatypeName])
+            else:
+                raise ValueError("Unknown datatype: " + field.datatypeName)
+        structType = ir.LiteralStructType(fieldTypes)
+        self.classStructTypes[node.name] = structType
+        for method in node.methods:
+            self.MethodDecl(method)
+    def MethodDecl(self, node):
+        if node.className not in self.classStructTypes:
+            raise ValueError("Unknown class in method: " + node.className)
+        classType = self.classStructTypes[node.className]
+        paramTypes = [ir.PointerType(classType)]
+        basicTypes = {
+            name: self.getLLVMType(type_info)
+            for name, type_info in self.datatypes.items()
+        }
+
+        for param in node.parameters:
+            dt = param.datatypeName
+            if dt in basicTypes:
+                paramTypes.append(basicTypes[dt])
+            elif dt in self.classStructTypes:
+                paramTypes.append(ir.PointerType(self.classStructTypes[dt]))
+            else:
+                raise ValueError("Unknown datatype in method parameter: " + dt)
+        funcType = ir.FunctionType(ir.IntType(32), paramTypes)
+        funcName = f"{node.className}_{node.name}"
+        func = ir.Function(self.module, funcType, name=funcName)
+        entry = func.append_basic_block("entry")
+        self.builder = ir.IRBuilder(entry)
+        self.funcSymtab = {}
+        self.funcSymtab["self"] = {"addr": func.args[0], "datatypeName": node.className}
+        for i, param in enumerate(node.parameters, start=1):
+            self.funcSymtab[param.name] = {"addr": func.args[i], "datatypeName": param.datatypeName}
+        retval = None
+        for stmt in node.body:
+            retval = self.codegen(stmt)
+        if not self.builder.block.terminator:
+            self.builder.ret(retval if retval else ir.Constant(ir.IntType(32), 0))
 
     def Function(self, node):
         funcType = ir.FunctionType(ir.IntType(32), [])
@@ -269,3 +345,10 @@ class CodeGen:
             retval = self.codegen(stmt)
         if not self.builder.block.terminator:
             self.builder.ret(retval if retval else ir.Constant(ir.IntType(32), 0))
+
+    def NewExpr(self, node):
+        if node.className not in self.classStructTypes:
+            raise ValueError("Unknown class: " + node.className)
+        structType = self.classStructTypes[node.className]
+        obj = self.builder.alloca(structType, name="objtmp")
+        return obj

@@ -2,6 +2,8 @@
   "tokens": [
     { "type": "COMMENT", "regex": "//[^\\n]*" },
     { "type": "CLASS", "regex": "class" },
+    { "type": "SELF", "regex": "self" },
+    { "type": "NEW", "regex": "new" },
     { "type": "IF", "regex": "if" },
     { "type": "ELSE", "regex": "else" },
     { "type": "WHILE", "regex": "while" },
@@ -55,14 +57,15 @@
     }
   },
   "datatypes": {
-    "int": "i32",
-    "float": "float",
-    "char": "i8",
-    "string": "i8*"
+    "int": "IntType(32)",
+    "float": "FloatType()",
+    "char": "IntType(8)",
+    "string": "PointerType(IntType(8))"
   },
   "astNodes": [
     { "name": "Program", "fields": ["functions", "classes"] },
     { "name": "Function", "fields": ["name", "body"] },
+    { "name": "MethodDecl", "fields": ["name", "parameters", "body", "className"] },
     { "name": "Return", "fields": ["expr"] },
     { "name": "ExpressionStatement", "fields": ["expr"] },
     { "name": "VarDecl", "fields": ["name", "init", "datatypeName"] },
@@ -72,21 +75,23 @@
     { "name": "Var", "fields": ["name"] },
     { "name": "String", "fields": ["value"] },
     { "name": "Char", "fields": ["value"] },
-    { "name": "FunctionCall", "fields": ["name", "args"] },
-    { "name": "ClassDecl", "fields": ["name", "members"] },
+    { "name": "FunctionCall", "fields": ["callee", "args"] },
+    { "name": "ClassDecl", "fields": ["name", "fields", "methods"] },
     { "name": "MemberAccess", "fields": ["objectExpr", "memberName"] },
     { "name": "Assign", "fields": ["left", "right"] },
     { "name": "If", "fields": ["condition", "thenBranch", "elseBranch"] },
     { "name": "While", "fields": ["condition", "body"] },
     { "name": "For", "fields": ["init", "condition", "increment", "body"] },
-    { "name": "DoWhile", "fields": ["body", "condition"] }
+    { "name": "DoWhile", "fields": ["body", "condition"] },
+    { "name": "NewExpr", "fields": ["className"] }
   ],
   "statementParseMap": {
     "RETURN": "parseReturn",
     "IF": "parseIf",
     "WHILE": "parseWhile",
     "FOR": "parseFor",
-    "DO": "parseDoWhile"
+    "DO": "parseDoWhile",
+    "SELF": "parseIdentifier"
   },
   "factorParseMap": {
     "NUMBER": { "method": "parseLiteral", "args": ["NUMBER", "Num"] },
@@ -94,6 +99,7 @@
     "STRING": { "method": "parseLiteral", "args": ["STRING", "String"] },
     "CHAR_LITERAL": { "method": "parseLiteral", "args": ["CHAR_LITERAL", "Char"] },
     "ID": "parseIdentifier",
+    "SELF": "parseIdentifier",
     "LPAREN": "parseParenthesizedExpression"
   }
 }
