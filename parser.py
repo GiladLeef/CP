@@ -47,24 +47,27 @@ class Parser:
         self.consumeToken("LBRACE")
         fields = []
         methods = []
+
         while self.currentToken() and self.currentToken().tokenType != "RBRACE":
-            member = self.parseClassMember()
+            member = self.parseClassMember(className)
             if member.__class__.__name__ == "MethodDecl":
-                member.className = className
                 methods.append(member)
             else:
                 fields.append(member)
         self.consumeToken("RBRACE")
         return self.astClasses["ClassDecl"](className, fields, methods)
-    def parseClassMember(self):
+
+    def parseClassMember(self, className):
         dataTypeToken = self.consumeDatatype()
         nameToken = self.consumeToken("ID")
         if self.currentToken() and self.currentToken().tokenType == "LPAREN":
-            return self.parseMethodDeclaration(dataTypeToken, nameToken)
+
+            return self.parseMethodDeclaration(dataTypeToken, nameToken, className)
         else:
             self.consumeToken("SEMICOLON")
             return self.astClasses["VarDecl"](nameToken.tokenValue, None, dataTypeToken.tokenValue)
-    def parseMethodDeclaration(self, returnTypeToken, nameToken):
+
+    def parseMethodDeclaration(self, returnTypeToken, nameToken, className):
         methodName = nameToken.tokenValue
         self.consumeToken("LPAREN")
         params = []
@@ -75,7 +78,9 @@ class Parser:
                 params.append(self.parseParameter())
         self.consumeToken("RPAREN")
         body = self.parseBlock()
-        return self.astClasses["MethodDecl"](methodName, params, body, None)
+
+        return self.astClasses["MethodDecl"](methodName, params, body, className, returnTypeToken.tokenValue)
+
     def parseParameter(self):
         dataTypeToken = self.consumeDatatype()
         idToken = self.consumeToken("ID")

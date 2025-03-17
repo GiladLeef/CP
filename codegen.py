@@ -306,7 +306,6 @@ class CodeGen:
             name: self.datatypes.get(type_info, None)
             for name, type_info in self.datatypes.items()
         }
-
         for param in node.parameters:
             dt = param.datatypeName
             if dt in basicTypes:
@@ -315,8 +314,14 @@ class CodeGen:
                 paramTypes.append(ir.PointerType(self.classStructTypes[dt]))
             else:
                 raise ValueError("Unknown datatype in method parameter: " + dt)
-        funcType = ir.FunctionType(ir.IntType(32), paramTypes)
+
+        returnType = self.datatypes[node.returnType] if hasattr(node, "returnType") and node.returnType in self.datatypes else ir.IntType(32)
+        funcType = ir.FunctionType(returnType, paramTypes)
         funcName = f"{node.className}_{node.name}"
+
+        if funcName in self.module.globals:
+            return self.module.globals[funcName]
+
         func = ir.Function(self.module, funcType, name=funcName)
         entry = func.append_basic_block("entry")
         self.builder = ir.IRBuilder(entry)
