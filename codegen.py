@@ -9,7 +9,6 @@ class CodeGen:
         self.stringCounter = 0
         self.programNode = None
         self.classStructTypes = {}
-        self.langDef = langDef
         self.declarePrintFunc()
         self.binOpMap = langDef["operators"]["binOpMap"]
         self.compMap = langDef["operators"]["compMap"]
