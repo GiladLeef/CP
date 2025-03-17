@@ -1,4 +1,5 @@
-from tokens import Token
+from lexer import Token
+
 class Parser:
     def __init__(self, tokens, astClasses, langDef):
         self.tokens = tokens

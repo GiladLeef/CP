@@ -1,5 +1,13 @@
 import re
-from tokens import Token
+
+class Token:
+    def __init__(self, tokenType, tokenValue):
+        self.tokenType = tokenType
+        self.tokenValue = tokenValue
+
+    def __repr__(self):
+        return "Token(%s, %s)" % (self.tokenType, self.tokenValue)
+
 class Lexer:
     def __init__(self, tokens):
         self.tokens = [(tokenType, re.compile(pattern)) for tokenType, pattern in tokens]
