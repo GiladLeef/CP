@@ -28,6 +28,11 @@
     { "type": "MULT", "regex": "\\*" },
     { "type": "DIV", "regex": "/" },
     { "type": "MOD", "regex": "%" },
+    { "type": "BITAND", "regex": "&" },
+    { "type": "BITXOR", "regex": "\\^" },
+    { "type": "BITOR", "regex": "\\|" },
+    { "type": "LSHIFT", "regex": "<<" },
+    { "type": "RSHIFT", "regex": ">>" },
     { "type": "EQEQ", "regex": "==" },
     { "type": "NEQ", "regex": "!=" },
     { "type": "LTE", "regex": "<=" },
@@ -45,7 +50,12 @@
       "-": ["sub", "fsub", "subtmp"],
       "*": ["mul", "fmul", "multmp"],
       "/": ["sdiv", "fdiv", "divtmp"],
-      "%": ["srem", "srem", "remtmp"]
+      "%": ["srem", "srem", "remtmp"],
+      "&": ["and_", "and_", "andtmp"],
+      "^": ["xor", "xor", "xortmp"],
+      "|": ["or_", "or_", "ortmp"],
+      "<<": ["shl", "shl", "shltmp"],
+      ">>": ["lshr", "lshr", "lshrtmp"]
     },
     "compMap": {
       "EQEQ": ["==", "==", "eqtmp"],
@@ -54,6 +64,24 @@
       "GT": [">", ">", "gttmp"],
       "LTE": ["<=", "<=", "letmp"],
       "GTE": [">=", ">=", "getmp"]
+    },
+    "precedences": {
+      "MULT": 4,
+      "DIV": 4,
+      "MOD": 4,
+      "PLUS": 3,
+      "MINUS": 3,
+      "LSHIFT": 2,
+      "RSHIFT": 2,
+      "EQEQ": 2,
+      "NEQ": 2,
+      "LT": 2,
+      "GT": 2,
+      "LTE": 2,
+      "GTE": 2,
+      "BITAND": 1,
+      "BITXOR": 1,
+      "BITOR": 1
     }
   },
   "datatypes": {
@@ -65,7 +93,7 @@
   "astNodes": [
     { "name": "Program", "fields": ["functions", "classes"] },
     { "name": "Function", "fields": ["name", "body"] },
-    { "name": "MethodDecl", "fields": ["name", "parameters", "body", "className", "returnType"]},
+    { "name": "MethodDecl", "fields": ["name", "parameters", "body", "className", "returnType"] },
     { "name": "Return", "fields": ["expr"] },
     { "name": "ExpressionStatement", "fields": ["expr"] },
     { "name": "VarDecl", "fields": ["name", "init", "datatypeName"] },

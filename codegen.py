@@ -19,16 +19,15 @@ class CodeGen:
     def resolveType(self, type_expr):
         type_name = type_expr.split("(")[0].strip()
         params = type_expr[type_expr.index("(") + 1:type_expr.index(")")].split(",") if "(" in type_expr else []
-        typeClass = getattr(ir, type_name)  
+        typeClass = getattr(ir, type_name)
         if params:
             validParams = []
             for param in params:
                 stripped_param = param.strip()
-                if stripped_param.isdigit():  
-                    validParams.append(int(stripped_param))  
-
-            return typeClass(*validParams) if validParams else typeClass()  
-        return typeClass()  
+                if stripped_param.isdigit():
+                    validParams.append(int(stripped_param))
+            return typeClass(*validParams) if validParams else typeClass()
+        return typeClass()
 
     def declarePrintFunc(self):
         printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
@@ -73,7 +72,7 @@ class CodeGen:
     def genArith(self, node, intOp, floatOp, resName):
         left = self.codegen(node.left)
         right = self.codegen(node.right)
-        if left.type == ir.FloatType() or right.type == ir.FloatType():
+        if floatOp is not None and (left.type == ir.FloatType() or right.type == ir.FloatType()):
             left, right = self.promoteToFloat(left, right)
             return getattr(self.builder, floatOp)(left, right, name="f" + resName)
         return getattr(self.builder, intOp)(left, right, name=resName)
@@ -163,7 +162,6 @@ class CodeGen:
             if not func:
                 raise NameError("Method " + qualifiedName + " not defined.")
             return self.builder.call(func, llvmArgs)
-
         else:
             raise SyntaxError("Invalid function call callee.")
 
@@ -314,14 +312,11 @@ class CodeGen:
                 paramTypes.append(ir.PointerType(self.classStructTypes[dt]))
             else:
                 raise ValueError("Unknown datatype in method parameter: " + dt)
-
         returnType = self.datatypes[node.returnType] if hasattr(node, "returnType") and node.returnType in self.datatypes else ir.IntType(32)
         funcType = ir.FunctionType(returnType, paramTypes)
         funcName = f"{node.className}_{node.name}"
-
         if funcName in self.module.globals:
             return self.module.globals[funcName]
-
         func = ir.Function(self.module, funcType, name=funcName)
         entry = func.append_basic_block("entry")
         self.builder = ir.IRBuilder(entry)
