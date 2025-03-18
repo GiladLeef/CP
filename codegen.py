@@ -1,7 +1,7 @@
 from llvmlite import binding as llvm
 from llvmlite import ir
 
-class CodeGen:
+class Codegen:
     def __init__(self, language):
         self.language = language
         self.module = ir.Module(name="module")
@@ -147,7 +147,13 @@ class CodeGen:
         if node.callee.__class__.__name__ == "Var":
             if node.callee.name == "print":
                 return self.PrintCall(node)
-            raise NameError("Unknown function: " + node.callee.name)
+            func = self.module.get_global(node.callee.name)
+            if not func:
+                raise NameError("Unknown function: " + node.callee.name)
+            llvmArgs = []
+            for arg in node.args:
+                llvmArgs.append(self.codegen(arg))
+            return self.builder.call(func, llvmArgs)
         elif node.callee.__class__.__name__ == "MemberAccess":
             obj = self.funcSymtab[node.callee.objectExpr.name]["addr"]
             methodName = node.callee.memberName

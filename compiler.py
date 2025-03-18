@@ -3,7 +3,7 @@ import os
 import sys
 from lexer import Lexer
 from parser import Parser
-from codegen import CodeGen
+from codegen import Codegen
 from llvmlite import binding as llvm
 from lang import language
 
@@ -16,7 +16,7 @@ class Compiler:
         tokens = self.lexer.lex(sourceCode)
         parser = Parser(language, tokens)
         ast = parser.parseProgram()
-        codegen = CodeGen(language)
+        codegen = Codegen(language)
         codegen.programNode = ast
         llvmModule = codegen.generateCode(ast)
         self.compileModule(llvmModule, outputExe)
