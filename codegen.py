@@ -13,23 +13,7 @@ class Codegen:
         self.declarePrintFunc()
         self.binOpMap = language["operators"]["binOpMap"]
         self.compMap = language["operators"]["compMap"]
-        self.datatypes = {}
-        for key, value in language["datatypes"].items():
-            self.datatypes[key] = self.resolveType(value)
-        self.basicTypes = {"int": ir.IntType(32), "float": ir.FloatType(), "char": ir.IntType(8), "string": ir.PointerType(ir.IntType(8))}
-
-    def resolveType(self, type_expr):
-        type_name = type_expr.split("(")[0].strip()
-        params = type_expr[type_expr.index("(") + 1:type_expr.index(")")].split(",") if "(" in type_expr else []
-        typeClass = getattr(ir, type_name)
-        if params:
-            validParams = []
-            for param in params:
-                stripped_param = param.strip()
-                if stripped_param.isdigit():
-                    validParams.append(int(stripped_param))
-            return typeClass(*validParams) if validParams else typeClass()
-        return typeClass()
+        self.datatypes = language["datatypes"]
 
     def declarePrintFunc(self):
         printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
@@ -115,8 +99,8 @@ class Codegen:
         return ir.Constant(ir.IntType(8), ord(node.value))
 
     def VarDecl(self, node):
-        if node.datatypeName in self.basicTypes:
-            varType = self.basicTypes[node.datatypeName]
+        if node.datatypeName in self.datatypes:
+            varType = self.datatypes[node.datatypeName]
             addr = self.builder.alloca(varType, name=node.name)
         elif node.datatypeName in self.classStructTypes:
             structType = self.classStructTypes[node.datatypeName]
@@ -124,7 +108,10 @@ class Codegen:
         else:
             raise ValueError("Unknown datatype: " + node.datatypeName)
         if node.init:
-            self.builder.store(self.codegen(node.init), addr)
+            init_val = self.codegen(node.init)
+            if node.datatypeName == "float" and init_val.type == ir.IntType(32):
+                init_val = self.builder.sitofp(init_val, ir.FloatType())
+            self.builder.store(init_val, addr)
         self.funcSymtab[node.name] = {"addr": addr, "datatypeName": node.datatypeName}
         return addr
 
@@ -186,6 +173,7 @@ class Codegen:
                 fmtParts.append("%c")
             elif val.type.is_pointer and val.type.pointee == ir.IntType(8):
                 fmtParts.append("%s")
+
             else:
                 fmtParts.append("%?")
             llvmArgs.append(val)
@@ -215,6 +203,7 @@ class Codegen:
         objInfo = self.funcSymtab[memberNode.objectExpr.name]
         idx = self.getMemberIndex(objInfo["datatypeName"], memberNode.memberName)
         ptr = self.builder.gep(objInfo["addr"], [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), idx)], name="memberPtr")
+
         self.builder.store(val, ptr)
         return val
 
@@ -288,34 +277,38 @@ class Codegen:
         return ir.Constant(ir.IntType(32), 0)
 
     def ClassDeclaration(self, node):
+        structType = ir.global_context.get_identified_type(node.name)
         fieldTypes = []
         for field in node.fields:
-            if field.datatypeName in self.basicTypes:
-                fieldTypes.append(self.basicTypes[field.datatypeName])
+            if field.datatypeName in self.datatypes:
+                fieldTypes.append(self.datatypes[field.datatypeName])
             elif field.datatypeName in self.classStructTypes:
                 fieldTypes.append(self.classStructTypes[field.datatypeName])
             else:
                 raise ValueError("Unknown datatype: " + field.datatypeName)
-        structType = ir.LiteralStructType(fieldTypes)
+
+        structType.set_body(*fieldTypes)
         self.classStructTypes[node.name] = structType
         for method in node.methods:
             self.MethodDecl(method)
+
 
     def MethodDecl(self, node):
         if node.className not in self.classStructTypes:
             raise ValueError("Unknown class in method: " + node.className)
         classType = self.classStructTypes[node.className]
         paramTypes = [ir.PointerType(classType)]
-        basicTypes = {name: self.datatypes.get(type_info, None) for name, type_info in self.datatypes.items()}
+
         for param in node.parameters:
             dt = param.datatypeName
-            if dt in basicTypes:
-                paramTypes.append(basicTypes[dt])
+            if dt in self.datatypes:
+                paramTypes.append(self.datatypes[dt])
             elif dt in self.classStructTypes:
                 paramTypes.append(ir.PointerType(self.classStructTypes[dt]))
             else:
                 raise ValueError("Unknown datatype in method parameter: " + dt)
         returnType = self.datatypes[node.returnType] if hasattr(node, "returnType") and node.returnType in self.datatypes else ir.IntType(32)
+
         funcType = ir.FunctionType(returnType, paramTypes)
         funcName = f"{node.className}_{node.name}"
         if funcName in self.module.globals:
@@ -334,7 +327,13 @@ class Codegen:
             self.builder.ret(retval if retval else ir.Constant(ir.IntType(32), 0))
 
     def Function(self, node):
-        funcType = ir.FunctionType(ir.IntType(32), [])
+        retTypeStr = node.returnType if hasattr(node, "returnType") else "int"
+        if retTypeStr in self.datatypes:
+            returnType = self.datatypes[retTypeStr]
+        else:
+            returnType = ir.IntType(32)
+        
+        funcType = ir.FunctionType(returnType, [])
         func = ir.Function(self.module, funcType, name=node.name)
         entry = func.append_basic_block("entry")
         self.builder = ir.IRBuilder(entry)
@@ -343,7 +342,7 @@ class Codegen:
         for stmt in node.body:
             retval = self.codegen(stmt)
         if not self.builder.block.terminator:
-            self.builder.ret(retval if retval else ir.Constant(ir.IntType(32), 0))
+            self.builder.ret(retval if retval is not None else ir.Constant(returnType, 0))
 
     def NewExpr(self, node):
         if node.className not in self.classStructTypes:

@@ -1,3 +1,5 @@
+from llvmlite import ir
+
 tokens = [
     {"type": "COMMENT", "regex": r"//[^\n]*"},
     {"type": "CLASS", "regex": r"\bclass\b"},
@@ -86,10 +88,10 @@ operators = {
 }
 
 datatypes = {
-    "int": "IntType(32)",
-    "float": "FloatType()",
-    "char": "IntType(8)",
-    "string": "PointerType(IntType(8))"
+    "int": ir.IntType(32),
+    "float": ir.FloatType(),
+    "char": ir.IntType(8),
+    "string": ir.PointerType(ir.IntType(8))
 }
 
 astnodes = [
