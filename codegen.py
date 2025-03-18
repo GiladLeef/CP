@@ -114,9 +114,8 @@ class Codegen:
         return ir.Constant(ir.IntType(8), ord(node.value))
 
     def VarDecl(self, node):
-        basicTypes = {"int": ir.IntType(32), "float": ir.FloatType(), "char": ir.IntType(8), "string": ir.PointerType(ir.IntType(8))}
-        if node.datatypeName in basicTypes:
-            varType = basicTypes[node.datatypeName]
+        if node.datatypeName in self.datatypes:
+            varType = self.datatypes[node.datatypeName]
             addr = self.builder.alloca(varType, name=node.name)
         elif node.datatypeName in self.classStructTypes:
             structType = self.classStructTypes[node.datatypeName]
@@ -289,10 +288,9 @@ class Codegen:
 
     def ClassDeclaration(self, node):
         fieldTypes = []
-        basicTypes = {"int": ir.IntType(32), "float": ir.FloatType(), "char": ir.IntType(8), "string": ir.PointerType(ir.IntType(8))}
         for field in node.fields:
-            if field.datatypeName in basicTypes:
-                fieldTypes.append(basicTypes[field.datatypeName])
+            if field.datatypeName in self.datatypes:
+                fieldTypes.append(self.datatypes[field.datatypeName])
             elif field.datatypeName in self.classStructTypes:
                 fieldTypes.append(self.classStructTypes[field.datatypeName])
             else:
@@ -307,11 +305,10 @@ class Codegen:
             raise ValueError("Unknown class in method: " + node.className)
         classType = self.classStructTypes[node.className]
         paramTypes = [ir.PointerType(classType)]
-        basicTypes = {name: self.datatypes.get(type_info, None) for name, type_info in self.datatypes.items()}
         for param in node.parameters:
             dt = param.datatypeName
-            if dt in basicTypes:
-                paramTypes.append(basicTypes[dt])
+            if dt in self.datatypes:
+                paramTypes.append(self.datatypes[dt])
             elif dt in self.classStructTypes:
                 paramTypes.append(ir.PointerType(self.classStructTypes[dt]))
             else:
@@ -335,7 +332,8 @@ class Codegen:
             self.builder.ret(retval if retval else ir.Constant(ir.IntType(32), 0))
 
     def Function(self, node):
-        funcType = ir.FunctionType(ir.IntType(32), [])
+        returnType = self.datatypes[node.returnType] if hasattr(node, "returnType") and node.returnType in self.datatypes else ir.IntType(32)
+        funcType = ir.FunctionType(returnType, [])
         func = ir.Function(self.module, funcType, name=node.name)
         entry = func.append_basic_block("entry")
         self.builder = ir.IRBuilder(entry)

@@ -91,7 +91,6 @@ datatypes = {
     "char": "IntType(8)",
     "string": "PointerType(IntType(8))"
 }
-
 astnodes = [
     {"name": "Program", "fields": ["functions", "classes"]},
     {"name": "Function", "fields": ["name", "body"]},
