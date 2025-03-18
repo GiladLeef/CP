@@ -113,7 +113,7 @@ class Parser:
         while self.currentToken() and self.currentToken().tokenType != "RBRACE":
             body.append(self.parseStatement())
         self.consumeToken("RBRACE")
-        return self.astClasses["Function"](name, body)
+        return self.astClasses["Function"](name, dataTypeToken.tokenValue, body)
 
     def parseStatement(self):
         token = self.currentToken()

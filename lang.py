@@ -96,7 +96,7 @@ datatypes = {
 
 astnodes = [
     {"name": "Program", "fields": ["functions", "classes"]},
-    {"name": "Function", "fields": ["name", "body"]},
+    {"name": "Function", "fields": ["name", "returnType", "body"]},
     {"name": "MethodDecl", "fields": ["name", "parameters", "body", "className", "returnType"]},
     {"name": "Return", "fields": ["expr"]},
     {"name": "ExpressionStatement", "fields": ["expr"]},
