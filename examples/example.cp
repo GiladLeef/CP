@@ -1,3 +1,6 @@
+// import code from other files using:
+// import file.cp
+
 class Person {
     string name;
     int age;
