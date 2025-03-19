@@ -37,15 +37,6 @@ def processImports(filePath, processedFiles=None):
 
     return "".join(resultContent)
 
-def processFile(filePath):
-    if not os.path.isfile(filePath):
-        raise FileNotFoundError(f"File {filePath} not found.")
-
-    finalContent = processImports(filePath)
-
-    with open("temp.cp", 'w') as f:
-        f.write(finalContent)
-
 class Compiler:
     def __init__(self):
         self.tokens = [(t["type"], t["regex"]) for t in language["tokens"]]
@@ -82,7 +73,7 @@ class Compiler:
         os.remove(objFilename)
         os.remove(bcFilename)
         os.remove(linkedBcFilename)
-        print("Executable '" + outputExe + "' generated.")
+        print(f"Executable '{outputExe}' generated.")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -91,15 +82,10 @@ if __name__ == "__main__":
 
     sourceFile = sys.argv[1]
 
-    processFile(sourceFile)
+    finalContent = processImports(sourceFile)
 
     baseFilename = os.path.splitext(sourceFile)[0]
     outputExe = baseFilename + ".exe"
-    
-    with open("temp.cp", "r") as f:
-        sourceCode = f.read()
 
     compiler = Compiler()
-    compiler.compileSource(sourceCode, outputExe)
-
-    os.remove("temp.cp")
+    compiler.compileSource(finalContent, outputExe)
