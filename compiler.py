@@ -77,7 +77,7 @@ class Compiler:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python main.py <sourceFile>")
+        print("Usage: python compiler.py <sourceFile>")
         sys.exit(1)
 
     sourceFile = sys.argv[1]
