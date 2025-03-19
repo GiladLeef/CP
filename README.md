@@ -12,6 +12,9 @@ C+ is a modern programming language that blends the simplicity of C with the fea
 ## Example program
 
 ```cpp
+// import code from other files using:
+// import file.cp
+
 class Person {
     string name;
     int age;
