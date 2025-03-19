@@ -7,6 +7,45 @@ from codegen import Codegen
 from llvmlite import binding as llvm
 from lang import language
 
+def processImports(filePath, processedFiles=None):
+    if processedFiles is None:
+        processedFiles = set()
+
+    if filePath in processedFiles:
+        return ""
+
+    processedFiles.add(filePath)
+
+    with open(filePath, 'r') as f:
+        content = f.readlines()
+
+    resultContent = []
+    importsToProcess = []
+
+    for line in content:
+        if line.startswith("import") and ".cp" in line:
+            importFile = line.split("import")[1].strip().replace(".cp", "") + ".cp"
+            importsToProcess.append(importFile)
+            resultContent.append("// " + line) 
+        else:
+            resultContent.append(line)
+
+    for importFile in importsToProcess:
+        importFilePath = os.path.join(os.path.dirname(filePath), importFile)
+        importedContent = processImports(importFilePath, processedFiles)
+        resultContent.insert(0, importedContent) 
+
+    return "".join(resultContent)
+
+def processFile(filePath):
+    if not os.path.isfile(filePath):
+        raise FileNotFoundError(f"File {filePath} not found.")
+
+    finalContent = processImports(filePath)
+
+    with open("temp.cp", 'w') as f:
+        f.write(finalContent)
+
 class Compiler:
     def __init__(self):
         self.tokens = [(t["type"], t["regex"]) for t in language["tokens"]]
@@ -49,11 +88,18 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python main.py <sourceFile>")
         sys.exit(1)
+
     sourceFile = sys.argv[1]
+
+    processFile(sourceFile)
+
     baseFilename = os.path.splitext(sourceFile)[0]
     outputExe = baseFilename + ".exe"
-    with open(sourceFile, "r") as f:
+    
+    with open("temp.cp", "r") as f:
         sourceCode = f.read()
+
     compiler = Compiler()
     compiler.compileSource(sourceCode, outputExe)
 
+    os.remove("temp.cp")
