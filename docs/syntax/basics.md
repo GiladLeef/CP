@@ -40,4 +40,19 @@ int main(){
 }
 ```
 
-### More: coming soon!!!
+## If-else (simple conditions)
+C+ has some conditions, if you want to check something
+
+```cp
+int main(){
+    int age = 13;
+    if (age < 18){
+        print("You are not old enougth");
+    } else {
+        print("You are old enougth");
+    }
+}
+```
+So, you can use these operators: `==`, `!=`, `<=`, `>=`, `<` and `>`
+
+## Next chapter: coming soon
