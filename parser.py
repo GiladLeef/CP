@@ -93,8 +93,28 @@ class Parser:
 
     def parseDeclaration(self):
         dataTypeToken = self.consumeDatatype()
-        varName = self.consumeToken("ID").tokenValue
         dataTypeName = dataTypeToken.tokenValue
+
+        if self.currentToken() and self.currentToken().tokenType == "LBRACKET":
+            self.consumeToken("LBRACKET")
+            size = None
+            if self.currentToken() and self.currentToken().tokenType != "RBRACKET":
+                size = self.parseExpression()
+            self.consumeToken("RBRACKET")
+
+            varName = self.consumeToken("ID").tokenValue
+
+            if self.currentToken() and self.currentToken().tokenType == "EQ":
+                self.consumeToken("EQ")
+                initExpr = self.parseExpression()
+                self.consumeToken("SEMICOLON")
+                return self.astClasses["VarDecl"](varName, initExpr, f"{dataTypeName}[]")
+
+            self.consumeToken("SEMICOLON")
+            return self.astClasses["ArrayDecl"](varName, size, dataTypeName)
+
+        varName = self.consumeToken("ID").tokenValue
+
         if self.currentToken() and self.currentToken().tokenType == "EQ":
             self.consumeToken("EQ")
             initExpr = self.parseExpression()
@@ -149,7 +169,7 @@ class Parser:
         if self.currentToken() and self.currentToken().tokenType == "EQ":
             self.consumeToken("EQ")
             right = self.parseAssignment()
-            if node.__class__.__name__ in ("MemberAccess", "Var"):
+            if node.__class__.__name__ in ("MemberAccess", "Var", "ArrayAccess"):
                 return self.astClasses["Assign"](node, right)
             raise SyntaxError("Invalid left-hand side for assignment")
         return node
@@ -181,6 +201,8 @@ class Parser:
             self.consumeToken("LPAREN")
             self.consumeToken("RPAREN")
             return self.astClasses["NewExpr"](classNameToken.tokenValue)
+        if token.tokenType == "LBRACKET":
+            return self.parseArrayLiteral()
         if token.tokenType in self.factorParseMap:
             return self.factorParseMap[token.tokenType]()
         raise SyntaxError("Unexpected token: " + str(token))
@@ -192,13 +214,18 @@ class Parser:
         else:
             raise SyntaxError("Expected identifier, got " + str(token))
         node = self.astClasses["Var"](token.tokenValue)
-        while self.currentToken() and self.currentToken().tokenType in ("DOT", "LPAREN"):
+        while self.currentToken() and self.currentToken().tokenType in ("DOT", "LPAREN", "LBRACKET"):
             if self.currentToken().tokenType == "DOT":
                 self.consumeToken("DOT")
                 memberName = self.consumeToken("ID").tokenValue
                 node = self.astClasses["MemberAccess"](node, memberName)
             elif self.currentToken().tokenType == "LPAREN":
                 node = self.parseFunctionCallWithCallee(node)
+            elif self.currentToken().tokenType == "LBRACKET":
+                self.consumeToken("LBRACKET")
+                index = self.parseExpression()
+                self.consumeToken("RBRACKET")
+                node = self.astClasses["ArrayAccess"](node, index)
         return node
 
     def parseFunctionCallWithCallee(self, callee):
@@ -275,3 +302,14 @@ class Parser:
             stmts.append(self.parseStatement())
         self.consumeToken("RBRACE")
         return stmts
+
+    def parseArrayLiteral(self):
+        self.consumeToken("LBRACKET")
+        elements = []
+        if self.currentToken() and self.currentToken().tokenType != "RBRACKET":
+            elements.append(self.parseExpression())
+            while self.currentToken() and self.currentToken().tokenType == "COMMA":
+                self.consumeToken("COMMA")
+                elements.append(self.parseExpression())
+        self.consumeToken("RBRACKET")
+        return self.astClasses["ArrayLiteral"](elements)

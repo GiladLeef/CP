@@ -43,7 +43,9 @@ tokens = [
     {"type": "GT", "regex": r">"},
     {"type": "STRING", "regex": r'"[^"]*"'},
     {"type": "DOT", "regex": r"\."},
-    {"type": "WS", "regex": r"\s+"}
+    {"type": "WS", "regex": r"\s+"},
+    {"type": "LBRACKET", "regex": r"\["},
+    {"type": "RBRACKET", "regex": r"\]"}
 ]
 
 operators = {
@@ -101,12 +103,15 @@ astnodes = [
     {"name": "Return", "fields": ["expr"]},
     {"name": "ExpressionStatement", "fields": ["expr"]},
     {"name": "VarDecl", "fields": ["name", "init", "datatypeName"]},
+    {"name": "ArrayDecl", "fields": ["name", "size", "elemType"]},
     {"name": "BinOp", "fields": ["op", "left", "right"]},
     {"name": "Num", "fields": ["value"]},
     {"name": "FloatNum", "fields": ["value"]},
     {"name": "Var", "fields": ["name"]},
     {"name": "String", "fields": ["value"]},
     {"name": "Char", "fields": ["value"]},
+    {"name": "ArrayAccess", "fields": ["array", "index"]},
+    {"name": "ArrayLiteral", "fields": ["elements"]},
     {"name": "FunctionCall", "fields": ["callee", "args"]},
     {"name": "ClassDecl", "fields": ["name", "fields", "methods"]},
     {"name": "MemberAccess", "fields": ["objectExpr", "memberName"]},
@@ -134,7 +139,8 @@ factorParseMap = {
     "CHAR_LITERAL": {"method": "parseLiteral", "args": ["CHAR_LITERAL", "Char"]},
     "ID": "parseIdentifier",
     "SELF": "parseIdentifier",
-    "LPAREN": "parseParenthesizedExpression"
+    "LPAREN": "parseParenthesizedExpression",
+    "LBRACKET": "parseArrayLiteral"
 }
 
 language = {
