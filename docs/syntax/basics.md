@@ -40,4 +40,4 @@ int main(){
 }
 ```
 
-### More: comming soon!!!
+### More: coming soon!!!
