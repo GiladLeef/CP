@@ -1,4 +1,3 @@
-from llvmlite import binding as llvm
 from llvmlite import ir
 
 class Codegen:
