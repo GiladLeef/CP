@@ -19,17 +19,35 @@ class Parser:
             else:
                 self.factorParseMap[key] = getattr(self, value)
         self.op_precedences = language["operators"]["precedences"]
+        self.datatypes = ("INT", "FLOAT", "CHAR")
 
     def currentToken(self):
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
 
-    def consumeToken(self, tokenType):
+    def match(self, tokenType):
         token = self.currentToken()
-        if token and token.tokenType == tokenType:
-            self.pos += 1
-            return token
-        raise SyntaxError("Expected token " + tokenType + ", got " + str(token))
+        return token and token.tokenType == tokenType
+        
+    def peek(self, offset=1):
+        pos = self.pos + offset
+        return self.tokens[pos] if pos < len(self.tokens) else None
 
+    def advance(self):
+        token = self.currentToken()
+        self.pos += 1
+        return token
+        
+    def consumeToken(self, tokenType):
+        if self.match(tokenType):
+            return self.advance()
+        raise SyntaxError(f"Expected token {tokenType}, got {self.currentToken()}")
+
+    def consumePairedTokens(self, openToken, closeToken, parseFunc):
+        self.consumeToken(openToken)
+        result = parseFunc()
+        self.consumeToken(closeToken)
+        return result
+        
     def parseLiteral(self, tokenType, astName):
         token = self.consumeToken(tokenType)
         return self.astClasses[astName](token.tokenValue)
@@ -38,122 +56,128 @@ class Parser:
         functions = []
         classes = []
         while self.currentToken() is not None:
-            if self.currentToken().tokenType == "CLASS":
+            if self.match("CLASS"):
                 classDecl = self.parseClassDeclaration()
                 classes.append(classDecl)
                 self.classNames.add(classDecl.name)
-            elif self.currentToken().tokenType in ("INT", "FLOAT", "CHAR", "ID") and \
-                 (self.currentToken().tokenType != "ID" or self.currentToken().tokenValue != "class"):
+            elif self.isDatatype(self.currentToken()):
                 functions.append(self.parseFunction())
             else:
-                self.consumeToken(self.currentToken().tokenType)
+                self.advance()
         return self.astClasses["Program"](functions, classes)
 
     def parseClassDeclaration(self):
         self.consumeToken("CLASS")
         className = self.consumeToken("ID").tokenValue
-        self.consumeToken("LBRACE")
+        fields, methods = self.parseBodyMembers("LBRACE", "RBRACE", 
+                                                lambda: self.parseClassMember(className))
+        return self.astClasses["ClassDecl"](className, fields, methods)
+        
+    def parseBodyMembers(self, openToken, closeToken, parseMemberFunc):
+        self.consumeToken(openToken)
         fields = []
         methods = []
-        while self.currentToken() and self.currentToken().tokenType != "RBRACE":
-            member = self.parseClassMember(className)
+        while self.currentToken() and not self.match(closeToken):
+            member = parseMemberFunc()
             if member.__class__.__name__ == "MethodDecl":
                 methods.append(member)
             else:
                 fields.append(member)
-        self.consumeToken("RBRACE")
-        return self.astClasses["ClassDecl"](className, fields, methods)
+        self.consumeToken(closeToken)
+        return fields, methods
 
     def parseClassMember(self, className):
         dataTypeToken = self.consumeDatatype()
         nameToken = self.consumeToken("ID")
-        if self.currentToken() and self.currentToken().tokenType == "LPAREN":
+        if self.match("LPAREN"):
             return self.parseMethodDeclaration(dataTypeToken, nameToken, className)
         else:
             self.consumeToken("SEMICOLON")
-            return self.astClasses["VarDecl"](nameToken.tokenValue, None, dataTypeToken.tokenValue)
+            return self.createVarDecl(nameToken.tokenValue, None, dataTypeToken.tokenValue)
 
     def parseMethodDeclaration(self, returnTypeToken, nameToken, className):
         methodName = nameToken.tokenValue
-        self.consumeToken("LPAREN")
-        params = []
-        if self.currentToken() and self.currentToken().tokenType != "RPAREN":
-            params.append(self.parseParameter())
-            while self.currentToken() and self.currentToken().tokenType == "COMMA":
-                self.consumeToken("COMMA")
-                params.append(self.parseParameter())
-        self.consumeToken("RPAREN")
+        params = self.consumePairedTokens("LPAREN", "RPAREN", 
+                                         lambda: self.parseDelimitedList("RPAREN", "COMMA", self.parseParameter))
         body = self.parseBlock()
         return self.astClasses["MethodDecl"](methodName, params, body, className, returnTypeToken.tokenValue)
 
     def parseParameter(self):
         dataTypeToken = self.consumeDatatype()
         idToken = self.consumeToken("ID")
-        return self.astClasses["VarDecl"](idToken.tokenValue, None, dataTypeToken.tokenValue)
+        return self.createVarDecl(idToken.tokenValue, None, dataTypeToken.tokenValue)
+        
+    def createVarDecl(self, name, init, typeName):
+        return self.astClasses["VarDecl"](name, init, typeName)
+
+    def parseDelimitedList(self, endToken, delimiterToken, parseFunc):
+        result = []
+        if not self.match(endToken):
+            result.append(parseFunc())
+            while self.match(delimiterToken):
+                self.consumeToken(delimiterToken)
+                result.append(parseFunc())
+        return result
 
     def parseDeclaration(self):
         dataTypeToken = self.consumeDatatype()
         dataTypeName = dataTypeToken.tokenValue
 
-        if self.currentToken() and self.currentToken().tokenType == "LBRACKET":
+        if self.match("LBRACKET"):
             self.consumeToken("LBRACKET")
-            size = None
-            if self.currentToken() and self.currentToken().tokenType != "RBRACKET":
-                size = self.parseExpression()
+            size = None if self.match("RBRACKET") else self.parseExpression()
             self.consumeToken("RBRACKET")
-
             varName = self.consumeToken("ID").tokenValue
-
-            if self.currentToken() and self.currentToken().tokenType == "EQ":
-                self.consumeToken("EQ")
-                initExpr = self.parseExpression()
-                self.consumeToken("SEMICOLON")
-                return self.astClasses["VarDecl"](varName, initExpr, f"{dataTypeName}[]")
-
+            
+            if self.match("EQ"):
+                return self.parseInitializedDeclaration(varName, f"{dataTypeName}[]")
+            
             self.consumeToken("SEMICOLON")
             return self.astClasses["ArrayDecl"](varName, size, dataTypeName)
 
         varName = self.consumeToken("ID").tokenValue
-
-        if self.currentToken() and self.currentToken().tokenType == "EQ":
-            self.consumeToken("EQ")
-            initExpr = self.parseExpression()
-            self.consumeToken("SEMICOLON")
-            return self.astClasses["VarDecl"](varName, initExpr, dataTypeName)
+        
+        if self.match("EQ"):
+            return self.parseInitializedDeclaration(varName, dataTypeName)
+        
         self.consumeToken("SEMICOLON")
-        return self.astClasses["VarDecl"](varName, None, dataTypeName)
+        return self.createVarDecl(varName, None, dataTypeName)
+
+    def parseInitializedDeclaration(self, varName, typeName):
+        self.consumeToken("EQ")
+        initExpr = self.parseExpression()
+        self.consumeToken("SEMICOLON")
+        return self.createVarDecl(varName, initExpr, typeName)
 
     def parseFunction(self):
         dataTypeToken = self.consumeDatatype()
         name = self.consumeToken("ID").tokenValue
         self.consumeToken("LPAREN")
         self.consumeToken("RPAREN")
-        self.consumeToken("LBRACE")
-        body = []
-        while self.currentToken() and self.currentToken().tokenType != "RBRACE":
-            body.append(self.parseStatement())
-        self.consumeToken("RBRACE")
+        body = self.parseBlock()
         return self.astClasses["Function"](name, dataTypeToken.tokenValue, body)
 
     def parseStatement(self):
         token = self.currentToken()
         if token.tokenType in self.statementParseMap:
             return self.statementParseMap[token.tokenType]()
-        elif token.tokenType in ("INT", "FLOAT", "CHAR") or \
-             (token.tokenType == "ID" and (token.tokenValue in self.classNames or token.tokenValue == "string")):
+        elif self.isDatatype(token):
             return self.parseDeclaration()
         else:
             expr = self.parseExpression()
             self.consumeToken("SEMICOLON")
             return self.astClasses["ExpressionStatement"](expr)
 
+    def isDatatype(self, token):
+        return token and (token.tokenType in self.datatypes or 
+                         (token.tokenType == "ID" and 
+                          (token.tokenValue in self.classNames or token.tokenValue == "string")))
+
     def consumeDatatype(self):
         token = self.currentToken()
-        if token.tokenType in ("INT", "FLOAT", "CHAR") or \
-           (token.tokenType == "ID" and (token.tokenValue in self.classNames or token.tokenValue == "string")):
-            self.pos += 1
-            return token
-        raise SyntaxError("Expected datatype, got " + str(token))
+        if self.isDatatype(token):
+            return self.advance()
+        raise SyntaxError(f"Expected datatype, got {token}")
 
     def parseReturn(self):
         self.consumeToken("RETURN")
@@ -166,7 +190,7 @@ class Parser:
 
     def parseAssignment(self):
         node = self.parseBinaryExpression()
-        if self.currentToken() and self.currentToken().tokenType == "EQ":
+        if self.match("EQ"):
             self.consumeToken("EQ")
             right = self.parseAssignment()
             if node.__class__.__name__ in ("MemberAccess", "Var", "ArrayAccess"):
@@ -178,18 +202,15 @@ class Parser:
         left = self.parseFactor()
         while True:
             token = self.currentToken()
-            if token is None:
+            if not token:
                 break
             token_type = token.tokenType
             if token_type not in self.op_precedences or self.op_precedences[token_type] < min_precedence:
                 break
             op_prec = self.op_precedences[token_type]
-            self.consumeToken(token_type)
+            self.advance()
             right = self.parseBinaryExpression(op_prec + 1)
-            if token_type in self.language["operators"]["compMap"]:
-                op = token_type
-            else:
-                op = token.tokenValue
+            op = token_type if token_type in self.language["operators"]["compMap"] else token.tokenValue
             left = self.astClasses["BinOp"](op, left, right)
         return left
 
@@ -205,71 +226,64 @@ class Parser:
             return self.parseArrayLiteral()
         if token.tokenType in self.factorParseMap:
             return self.factorParseMap[token.tokenType]()
-        raise SyntaxError("Unexpected token: " + str(token))
+        raise SyntaxError(f"Unexpected token: {token}")
 
     def parseIdentifier(self):
         token = self.currentToken()
         if token.tokenType in ("ID", "SELF"):
-            self.pos += 1
+            self.advance()
         else:
-            raise SyntaxError("Expected identifier, got " + str(token))
+            raise SyntaxError(f"Expected identifier, got {token}")
+        
         node = self.astClasses["Var"](token.tokenValue)
+        return self.parseChainedAccess(node)
+        
+    def parseChainedAccess(self, node):
         while self.currentToken() and self.currentToken().tokenType in ("DOT", "LPAREN", "LBRACKET"):
-            if self.currentToken().tokenType == "DOT":
+            if self.match("DOT"):
                 self.consumeToken("DOT")
                 memberName = self.consumeToken("ID").tokenValue
                 node = self.astClasses["MemberAccess"](node, memberName)
-            elif self.currentToken().tokenType == "LPAREN":
+            elif self.match("LPAREN"):
                 node = self.parseFunctionCallWithCallee(node)
-            elif self.currentToken().tokenType == "LBRACKET":
-                self.consumeToken("LBRACKET")
-                index = self.parseExpression()
-                self.consumeToken("RBRACKET")
+            elif self.match("LBRACKET"):
+                index = self.consumePairedTokens("LBRACKET", "RBRACKET", self.parseExpression)
                 node = self.astClasses["ArrayAccess"](node, index)
         return node
 
     def parseFunctionCallWithCallee(self, callee):
-        self.consumeToken("LPAREN")
-        args = []
-        if self.currentToken() and self.currentToken().tokenType != "RPAREN":
-            args.append(self.parseExpression())
-            while self.currentToken() and self.currentToken().tokenType == "COMMA":
-                self.consumeToken("COMMA")
-                args.append(self.parseExpression())
-        self.consumeToken("RPAREN")
+        args = self.consumePairedTokens("LPAREN", "RPAREN", 
+                                       lambda: self.parseDelimitedList("RPAREN", "COMMA", self.parseExpression))
         return self.astClasses["FunctionCall"](callee, args)
 
     def parseParenthesizedExpression(self):
-        self.consumeToken("LPAREN")
-        node = self.parseExpression()
-        self.consumeToken("RPAREN")
-        return node
+        return self.consumePairedTokens("LPAREN", "RPAREN", self.parseExpression)
+
+    def parseCondition(self):
+        if self.match("LPAREN"):
+            return self.consumePairedTokens("LPAREN", "RPAREN", self.parseExpression)
+        return self.parseExpression()
+        
+    def parseControlFlow(self, keyword, nodeType, hasElse=False):
+        self.consumeToken(keyword)
+        condition = self.parseCondition()
+        thenBody = self.parseBlock()
+        elseBody = None
+        
+        if hasElse and self.match("ELSE"):
+            self.consumeToken("ELSE")
+            if nodeType == "If" and self.match("IF"):
+                elseBody = [self.parseIf()]
+            else:
+                elseBody = self.parseBlock()
+                
+        return self.astClasses[nodeType](condition, thenBody, elseBody) if hasElse else self.astClasses[nodeType](condition, thenBody)
 
     def parseIf(self):
-        self.consumeToken("IF")
-        if self.currentToken().tokenType == "LPAREN":
-            self.consumeToken("LPAREN")
-            condition = self.parseExpression()
-            self.consumeToken("RPAREN")
-        else:
-            condition = self.parseExpression()
-        thenBranch = self.parseBlock()
-        elseBranch = None
-        if self.currentToken() and self.currentToken().tokenType == "ELSE":
-            self.consumeToken("ELSE")
-            elseBranch = [self.parseIf()] if self.currentToken() and self.currentToken().tokenType == "IF" else self.parseBlock()
-        return self.astClasses["If"](condition, thenBranch, elseBranch)
+        return self.parseControlFlow("IF", "If", True)
 
     def parseWhile(self):
-        self.consumeToken("WHILE")
-        if self.currentToken().tokenType == "LPAREN":
-            self.consumeToken("LPAREN")
-            condition = self.parseExpression()
-            self.consumeToken("RPAREN")
-        else:
-            condition = self.parseExpression()
-        body = self.parseBlock()
-        return self.astClasses["While"](condition, body)
+        return self.parseControlFlow("WHILE", "While")
 
     def parseFor(self):
         self.consumeToken("FOR")
@@ -286,30 +300,20 @@ class Parser:
         self.consumeToken("DO")
         body = self.parseBlock()
         self.consumeToken("WHILE")
-        if self.currentToken().tokenType == "LPAREN":
-            self.consumeToken("LPAREN")
-            condition = self.parseExpression()
-            self.consumeToken("RPAREN")
-        else:
-            condition = self.parseExpression()
+        condition = self.parseCondition()
         self.consumeToken("SEMICOLON")
         return self.astClasses["DoWhile"](body, condition)
 
     def parseBlock(self):
-        self.consumeToken("LBRACE")
+        return self.consumePairedTokens("LBRACE", "RBRACE", self.parseBlockBody)
+        
+    def parseBlockBody(self):
         stmts = []
-        while self.currentToken() and self.currentToken().tokenType != "RBRACE":
+        while self.currentToken() and not self.match("RBRACE"):
             stmts.append(self.parseStatement())
-        self.consumeToken("RBRACE")
         return stmts
 
     def parseArrayLiteral(self):
-        self.consumeToken("LBRACKET")
-        elements = []
-        if self.currentToken() and self.currentToken().tokenType != "RBRACKET":
-            elements.append(self.parseExpression())
-            while self.currentToken() and self.currentToken().tokenType == "COMMA":
-                self.consumeToken("COMMA")
-                elements.append(self.parseExpression())
-        self.consumeToken("RBRACKET")
+        elements = self.consumePairedTokens("LBRACKET", "RBRACKET", 
+                                          lambda: self.parseDelimitedList("RBRACKET", "COMMA", self.parseExpression))
         return self.astClasses["ArrayLiteral"](elements)
