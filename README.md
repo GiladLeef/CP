@@ -9,8 +9,6 @@ C+ is a modern programming language that blends the simplicity of C with the fea
 - Control structures: `if`, `else`, `while`, `for`, and `do-while`
 - Easy function and method calls
 
-```
-
 ## Contributing
 
 Contributions are welcome! Fork the repository and submit a pull request.
