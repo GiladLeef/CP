@@ -42,5 +42,46 @@ int main() {
     print(p.name);
     print(p.whatIsMyAge());
 
+    int[5] numbers;
+    numbers[0] = 10;
+    numbers[1] = 20;
+    numbers[2] = 30;
+    numbers[3] = 40;
+    numbers[4] = 50;
+    
+    print("Array elements:");
+    for (int i = 0; i < 5; i = i + 1) {
+        print(numbers[i]);
+    }
+    
+    string[3] fruits;
+    fruits[0] = "Apple";
+    fruits[1] = "Banana";
+    fruits[2] = "Cherry";
+    
+    print("Fruits:");
+    for (int i = 0; i < 3; i = i + 1) {
+        print(fruits[i]);
+    }
+    
+    Person alice;
+    alice.name = "Alice";
+    alice.age = 25;
+    
+    Person bob;
+    bob.name = "Bob";
+    bob.age = 30;
+    
+    Person[2] people;
+    people[0] = alice;
+    people[1] = bob;
+    
+    print("People:");
+    for (int i = 0; i < 2; i = i + 1) {
+        Person current = people[i];
+        print(current.name);
+        print(current.whatIsMyAge());
+    }
+
     return 0;
 }
