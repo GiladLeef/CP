@@ -74,18 +74,29 @@ class Compiler:
         os.remove(bcFilename)
         os.remove(linkedBcFilename)
         print(f"Executable '{outputExe}' generated.")
-
+def printUsage():
+    print("Usage: python compiler.py [OPTIONS] <sourceFile>")
+    print("OPTIONS:")
+    print("\t-o             Sets the output file")
+    print("\t-h             Help page")
+    sys.exit(1)
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python compiler.py <sourceFile>")
-        sys.exit(1)
+        printUsage()
 
     sourceFile = sys.argv[1]
-
+    if sourceFile  == '-o':
+        if len(sys.argv) < 4:
+            printUsage()
+        sourceFile = sys.argv[3]
+    elif sourceFile == '-h':
+        printUsage()
     finalContent = processImports(sourceFile)
 
     baseFilename = os.path.splitext(sourceFile)[0]
     outputExe = baseFilename + ".exe"
-
+    if len(sys.argv) > 2:
+        if '-o' in sys.argv:
+            outputExe = sys.argv[sys.argv.index('-o')+1]
     compiler = Compiler()
     compiler.compileSource(finalContent, outputExe)
