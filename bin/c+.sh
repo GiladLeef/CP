@@ -1,0 +1,1 @@
+python /home/$USER/.cplang/compiler.py $@
