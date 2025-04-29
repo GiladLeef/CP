@@ -1,1 +1,1 @@
-python /cplang/compiler.py $@
+python /home/$USER/compiler.py $@
