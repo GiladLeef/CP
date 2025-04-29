@@ -1,6 +1,6 @@
 
 
-URL="https://github.com/TrollMii/CP"
+URL="https://github.com/GiladLeef/CP"
 OUTPUT_DIR="/home/$USER/.cplang"
 OUT_LINK="/home/$USER/.local/bin/c+"
 install()
