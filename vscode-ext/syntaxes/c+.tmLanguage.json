@@ -31,7 +31,7 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.c+",
-				"match": "\\b(if|else|while|do|for|return)\\b"
+				"match": "\\b(if|else|while|do|for|return|import|new)\\b"
 			}]
 		},
 		"strings": {
@@ -48,7 +48,7 @@
 		"basic_types": {
 			"patterns": [{
 				"name": "constant.language.c+",
-				"match": "\\b(int|char|string|float)\\b"
+				"match": "\\b(int|char|string|float|void)\\b"
 			}]
 		},
 

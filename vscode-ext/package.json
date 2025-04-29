@@ -2,9 +2,10 @@
   "name": "cp-ext",
   "displayName": "C+ Extension",
   "description": "C+ is a language by Gilad Leef",
-  "version": "0.0.1",
+  "version": "0.0.4",
+  "publisher": "CP",
   "engines": {
-    "vscode": "^1.99.0"
+    "vscode": "^1.98.2"
   },
   "categories": [
     "Programming Languages"
