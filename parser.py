@@ -156,7 +156,11 @@ class Parser:
         self.consumeToken("LPAREN")
         args = self.consumeFuncArgs()
         self.consumeToken("RPAREN")
-        body = self.parseBlock()
+        if self.currentToken().tokenType == "SEMICOLON":
+            self.consumeToken("SEMICOLON")
+            body = None
+        else:
+            body = self.parseBlock()
         return self.astClasses["Function"](name, dataTypeToken.tokenValue, args, body)
     def consumeFuncArgs(self) -> list:
         args = []

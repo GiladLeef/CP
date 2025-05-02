@@ -622,6 +622,9 @@ class Codegen:
         if not self.builder.block.terminator:
             self.builder.ret(retval if retval else ir.Constant(ir.IntType(32), 0))
     def Function(self, node):
+        declaration = False
+        if node.body == None:
+            declaration = True
         retTypeStr = node.returnType if hasattr(node, "returnType") else "int"
         if retTypeStr in self.datatypes:
             returnType = self.datatypes[retTypeStr]
@@ -632,23 +635,23 @@ class Codegen:
         else:
             funcType = ir.FunctionType(returnType, [self.datatypes[arg_type] for arg_type, _ in node.args], var_arg=True)
         func = ir.Function(self.module, funcType, name=node.name)
+        if not declaration:
+            entry = func.append_basic_block("entry")
+            self.builder = ir.IRBuilder(entry)
+            self.funcSymtab = {}
+            if len(node.args) != 0:
+                for i, (_, name) in enumerate(node.args):
+                    func.args[i].name = name
+                    ptr = self.builder.alloca(func.args[i].type, name=name + "_ptr")
+                    self.builder.store(func.args[i], ptr)
+                    self.funcSymtab[name] = ptr
+            
+        
+            for stmt in node.body:
+                retval = self.codegen(stmt)
 
-        entry = func.append_basic_block("entry")
-        self.builder = ir.IRBuilder(entry)
-        self.funcSymtab = {}
-        if len(node.args) != 0:
-            for i, (_, name) in enumerate(node.args):
-                func.args[i].name = name
-                ptr = self.builder.alloca(func.args[i].type, name=name + "_ptr")
-                self.builder.store(func.args[i], ptr)
-                self.funcSymtab[name] = ptr
-
-        retval = None
-        for stmt in node.body:
-            retval = self.codegen(stmt)
-
-        if not self.builder.block.terminator:
-            self.builder.ret(retval if retval is not None else ir.Constant(returnType, 0))
+            if not self.builder.block.terminator:
+                self.builder.ret(retval if retval is not None else ir.Constant(returnType, 0))
 
     def NewExpr(self, node):
         if node.className not in self.classStructTypes:
