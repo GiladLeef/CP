@@ -46,16 +46,16 @@ class Compiler:
         self.tokens = [(t["type"], t["regex"]) for t in language["tokens"]]
         self.lexer = Lexer(self.tokens)
 
-    def compileSource(self, sourceCode, outputExe, flags, cflag=False):
+    def compileSource(self, sourceCode, outputExe, flags, cflag=False, Sflag=False):
         tokens = self.lexer.lex(sourceCode)
         parser = Parser(language, tokens)
         ast = parser.parseProgram()
         codegen = Codegen(language)
         codegen.programNode = ast
         llvmModule = codegen.generateCode(ast)
-        self.compileModule(llvmModule, outputExe, flags, cflag)
+        self.compileModule(llvmModule, outputExe, flags, cflag, Sflag)
 
-    def compileModule(self, llvmModule, outputExe, flags, cflag=False):
+    def compileModule(self, llvmModule, outputExe, flags, cflag=False, Sflag=False):
         llvm.initialize()
         llvm.initialize_native_target()
         llvm.initialize_native_asmprinter()
@@ -73,13 +73,17 @@ class Compiler:
             f.write(str(llvmModule))
         linkedBcFilename = "linked.bc"
         subprocess.run(["llvm-link", bcFilename, "-o", linkedBcFilename], check=True)
-        if not cflag:
+        if not cflag and not Sflag:
             subprocess.run(["clang++", *flags, linkedBcFilename, "-o", outputExe, "-lstdc++", "-lm"], check=True)
             
             print(f"Executable '{outputExe}' generated.")
         else:
-            subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe], check=True)
-            print(f"Object '{outputExe} generated, you can now link it")
+            if not Sflag and cflag:
+                subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe], check=True)
+                print(f"Object '{outputExe} generated, you can now link it")
+            else:
+                subprocess.run(["clang++", *flags, linkedBcFilename, "-S", "-o", outputExe], check=True)
+                print(f"Asm file '{outputExe}' generated")
         os.remove(objFilename)
         os.remove(bcFilename)
         os.remove(linkedBcFilename)
@@ -99,6 +103,7 @@ if __name__ == "__main__":
     valid_optimizations = ['-O3', '-O2', '-O1', '-O0']
     flags = []
     cflag = False
+    Sflag = False
     outputExe = None
     sourceFile = None
 
@@ -110,7 +115,9 @@ if __name__ == "__main__":
     if '-c' in args:
         args.remove('-c')
         cflag = True
-
+    elif '-S' in args:
+        args.remove('-S')
+        Sflag = True
     if '-g' in args:
         args.remove('-g')
         flags.append('-g')
@@ -138,4 +145,4 @@ if __name__ == "__main__":
     outputExe = outputExe or baseFilename + ".exe"
 
     compiler = Compiler()
-    compiler.compileSource(finalContent, outputExe, flags, cflag)
+    compiler.compileSource(finalContent, outputExe, flags, cflag, Sflag)
