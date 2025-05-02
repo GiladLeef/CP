@@ -93,7 +93,8 @@ datatypes = {
     "int": ir.IntType(32),
     "float": ir.FloatType(),
     "char": ir.IntType(8),
-    "string": ir.PointerType(ir.IntType(8))
+    "string": ir.PointerType(ir.IntType(8)),
+    "void": ir.VoidType()
 }
 
 astnodes = [
