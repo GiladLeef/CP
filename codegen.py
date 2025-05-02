@@ -337,9 +337,13 @@ class Codegen:
 
     def Var(self, node):
         info = self.funcSymtab.get(node.name)
-        if info:
-            return self.builder.load(info["addr"], name=node.name)
-        raise NameError("Undefined variable: " + node.name)
+
+        if info is None:
+            raise NameError("Undefined variable: " + node.name)
+
+        ptr = info["addr"] if isinstance(info, dict) else info
+
+        return self.builder.load(ptr, name=node.name)
 
     def FunctionCall(self, node):
         if node.callee.__class__.__name__ == "Var":
@@ -623,15 +627,26 @@ class Codegen:
             returnType = self.datatypes[retTypeStr]
         else:
             returnType = ir.IntType(32)
-
-        funcType = ir.FunctionType(returnType, [])
+        if len(node.args) == 0:  
+            funcType = ir.FunctionType(returnType, [], var_arg=False)
+        else:
+            funcType = ir.FunctionType(returnType, [self.datatypes[arg_type] for arg_type, _ in node.args], var_arg=True)
         func = ir.Function(self.module, funcType, name=node.name)
+
         entry = func.append_basic_block("entry")
         self.builder = ir.IRBuilder(entry)
         self.funcSymtab = {}
+        if len(node.args) != 0:
+            for i, (_, name) in enumerate(node.args):
+                func.args[i].name = name
+                ptr = self.builder.alloca(func.args[i].type, name=name + "_ptr")
+                self.builder.store(func.args[i], ptr)
+                self.funcSymtab[name] = ptr
+
         retval = None
         for stmt in node.body:
             retval = self.codegen(stmt)
+
         if not self.builder.block.terminator:
             self.builder.ret(retval if retval is not None else ir.Constant(returnType, 0))
 

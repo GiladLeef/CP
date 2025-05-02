@@ -1,5 +1,6 @@
 from lexer import AstFactory
-
+import lexer
+from llvmlite import ir
 class Parser:
     def __init__(self, language, tokens):
         self.language = language
@@ -28,7 +29,7 @@ class Parser:
         token = self.currentToken()
         return token and token.tokenType == tokenType
         
-    def peek(self, offset=1):
+    def peek(self, offset=1) -> lexer.Token:
         pos = self.pos + offset
         return self.tokens[pos] if pos < len(self.tokens) else None
 
@@ -37,7 +38,7 @@ class Parser:
         self.pos += 1
         return token
         
-    def consumeToken(self, tokenType):
+    def consumeToken(self, tokenType) -> lexer.Token:
         if self.match(tokenType):
             return self.advance()
         raise SyntaxError(f"Expected token {tokenType}, got {self.currentToken()}")
@@ -153,9 +154,30 @@ class Parser:
         dataTypeToken = self.consumeDatatype()
         name = self.consumeToken("ID").tokenValue
         self.consumeToken("LPAREN")
+        args = self.consumeFuncArgs()
         self.consumeToken("RPAREN")
         body = self.parseBlock()
-        return self.astClasses["Function"](name, dataTypeToken.tokenValue, body)
+        return self.astClasses["Function"](name, dataTypeToken.tokenValue, args, body)
+    def consumeFuncArgs(self) -> list:
+        args = []
+
+        if self.peek().tokenType == "RPAREN":
+            return args
+
+        while True:
+            if self.currentToken().tokenType == "RPAREN":
+                return args
+            dt = self.consumeDatatype().tokenValue
+            id = self.consumeToken("ID").tokenValue
+
+            args.append((dt, id))
+            if self.currentToken().tokenType == "COMMA":
+                self.consumeToken("COMMA")
+            else:
+                break
+
+        return args
+
 
     def parseStatement(self):
         token = self.currentToken()
