@@ -72,21 +72,23 @@ class Compiler:
         with open(bcFilename, "w") as f:
             f.write(str(llvmModule))
         linkedBcFilename = "linked.bc"
-        subprocess.run(["llvm-link", bcFilename, "-o", linkedBcFilename], check=True)
-        if not cflag and not Sflag:
-            subprocess.run(["clang++", *flags, linkedBcFilename, "-o", outputExe, "-lstdc++", "-lm"], check=True)
-            
-            print(f"Executable '{outputExe}' generated.")
-        else:
-            if not Sflag and cflag:
-                subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe], check=True)
-                print(f"Object '{outputExe} generated, you can now link it")
+        try:
+            subprocess.run(["llvm-link", bcFilename, "-o", linkedBcFilename], check=True)
+            if not cflag and not Sflag:
+                subprocess.run(["clang++", *flags, linkedBcFilename, "-o", outputExe, "-lstdc++", "-lm"], check=True)
+                
+                print(f"Executable '{outputExe}' generated.")
             else:
-                subprocess.run(["clang++", *flags, linkedBcFilename, "-S", "-o", outputExe], check=True)
-                print(f"Asm file '{outputExe}' generated")
-        os.remove(objFilename)
-        os.remove(bcFilename)
-        os.remove(linkedBcFilename)
+                if not Sflag and cflag:
+                    subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe], check=True)
+                    print(f"Object '{outputExe} generated, you can now link it")
+                else:
+                    subprocess.run(["clang++", *flags, linkedBcFilename, "-S", "-o", outputExe], check=True)
+                    print(f"Asm file '{outputExe}' generated")
+        finally:
+            os.remove(objFilename)
+            os.remove(bcFilename)
+            os.remove(linkedBcFilename)
 def printUsage():
     print("Usage: python compiler.py [OPTIONS] <sourceFile>")
     print("OPTIONS:")
