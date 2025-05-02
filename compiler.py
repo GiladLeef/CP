@@ -78,7 +78,7 @@ class Compiler:
             
             print(f"Executable '{outputExe}' generated.")
         else:
-            subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe, "-lstdc++", "-lm"], check=True)
+            subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe], check=True)
             print(f"Object '{outputExe} generated, you can now link it")
         os.remove(objFilename)
         os.remove(bcFilename)
@@ -92,44 +92,50 @@ def printUsage():
     print("\t-g             Add debug symbols")
     print("\t-O[0-3]        Optimise Level")
     sys.exit(1)
+import sys
+import os
+
 if __name__ == "__main__":
+    valid_optimizations = ['-O3', '-O2', '-O1', '-O0']
     flags = []
-    if len(sys.argv) < 2:
-        printUsage()
     cflag = False
-    if '-c' in sys.argv:
-        sys.argv.remove('-c')
-        cflag = True
-    if '-g' in sys.argv:
-        sys.argv.remove('-g')
-        flags.append('-g')
+    outputExe = None
+    sourceFile = None
 
-    if '-O3' in sys.argv:
-        sys.argv.remove('-O3')
-        flags.append('-O3')
-    elif '-O2' in sys.argv:
-        sys.argv.remove('-O2')
-        flags.append('-O2')
-    elif '-O1' in sys.argv:
-        sys.argv.remove('-O1')
-        flags.append('-O1')
-    elif '-O0' in sys.argv:
-        sys.argv.remove('-O0')
-        flags.append('-O0')
-    
-    sourceFile = sys.argv[1]
-    if sourceFile  == '-o':
-        if len(sys.argv) < 4:
-            printUsage()
-        sourceFile = sys.argv[3]
-    elif sourceFile == '-h':
+    args = sys.argv[1:]
+
+    if not args or '-h' in args:
         printUsage()
-    finalContent = processImports(sourceFile)
 
+    if '-c' in args:
+        args.remove('-c')
+        cflag = True
+
+    if '-g' in args:
+        args.remove('-g')
+        flags.append('-g')
+    
+    for opt in valid_optimizations:
+        if opt in args:
+            args.remove(opt)
+            flags.append(opt)
+            break
+
+    if '-o' in args:
+        try:
+            o_index = args.index('-o')
+            outputExe = args[o_index + 1]
+            del args[o_index:o_index + 2]
+        except (IndexError, ValueError):
+            printUsage()
+
+    if not args:
+        printUsage()
+    sourceFile = args[0]
+
+    finalContent = processImports(sourceFile)
     baseFilename = os.path.splitext(sourceFile)[0]
-    outputExe = baseFilename + ".exe"
-    if len(sys.argv) > 2:
-        if '-o' in sys.argv:
-            outputExe = sys.argv[sys.argv.index('-o')+1]
+    outputExe = outputExe or baseFilename + ".exe"
+
     compiler = Compiler()
     compiler.compileSource(finalContent, outputExe, flags, cflag)
