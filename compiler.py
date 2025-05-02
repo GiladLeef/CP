@@ -4,7 +4,11 @@ import sys
 from lexer import Lexer
 from parser import Parser
 from codegen import Codegen
-from llvmlite import binding as llvm
+try:    
+    from llvmlite import binding as llvm
+except:
+    print("please install llvm lite")
+    exit(1)
 from lang import language
 
 def processImports(filePath, processedFiles=None):

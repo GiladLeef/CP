@@ -1,23 +1,82 @@
 from llvmlite import ir
+from typing import Literal
+
+OS_LITERAL = Literal['linux', 'windows']
 
 class Codegen:
     def __init__(self, language):
         self.language = language
         self.module = ir.Module(name="module")
+        self.builtin_funcs = (
+            "print",
+            "write",
+            "exit",
+            "fork",
+            "execve",
+            "malloc",
+            "free"
+        )
+        self.builtin_funcs_call = {
+            "print": self.PrintCall,
+            "write": self.WriteCall,
+            "exit": self.ExitCall,
+            "fork": self.ForkCall,
+            "execve": self.ExecveCall,
+            "malloc": self.MallocCall,
+            "free": self.FreeCall
+        }
         self.builder = None
         self.funcSymtab = {}
         self.stringCounter = 0
         self.programNode = None
         self.classStructTypes = {}
-        self.declarePrintFunc()
+        self.declareStdFuncs()
         self.binOpMap = language["operators"]["binOpMap"]
         self.compMap = language["operators"]["compMap"]
         self.datatypes = language["datatypes"]
         self.arrayTypesCache = {}
+    def declareStdFuncs(self, os:OS_LITERAL="linux"):
+        if os == "linux":
+            printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
+            self.printFunc = ir.Function(self.module, printType, name="printf")
 
-    def declarePrintFunc(self):
-        printType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=True)
-        self.printFunc = ir.Function(self.module, printType, name="printf")
+            writeType = ir.FunctionType(ir.IntType(32), [ir.IntType(32), ir.PointerType(ir.IntType(8)), ir.IntType(32)], var_arg=False)
+            self.writeFunc = ir.Function(self.module, writeType, name="write")
+
+            readType = ir.FunctionType(ir.IntType(32), [ir.IntType(32), ir.PointerType(ir.IntType(8)), ir.IntType(32)], var_arg=False)
+            self.readFunc = ir.Function(self.module, readType, name="read")
+
+            exitType = ir.FunctionType(ir.VoidType(), [ir.IntType(32)], var_arg=False)
+            self.exitFunc = ir.Function(self.module, exitType, name="exit")
+
+            forkType = ir.FunctionType(ir.IntType(32), [], var_arg=False)
+            self.forkFunc = ir.Function(self.module, forkType, name="fork")
+
+            execveType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8)), ir.PointerType(ir.PointerType(ir.IntType(8))), ir.PointerType(ir.PointerType(ir.IntType(8)))], var_arg=False)
+            self.execveFunc = ir.Function(self.module, execveType, name="execve")
+
+            mallocType = ir.FunctionType(ir.PointerType(ir.IntType(8)), [ir.IntType(32)], var_arg=False)
+            self.mallocFunc = ir.Function(self.module, mallocType, name="malloc")
+
+            freeType = ir.FunctionType(ir.VoidType(), [ir.PointerType(ir.IntType(8))], var_arg=False)
+            self.freeFunc = ir.Function(self.module, freeType, name="free")
+
+            memcpyType = ir.FunctionType(ir.PointerType(ir.IntType(8)), [ir.PointerType(ir.IntType(8)), ir.PointerType(ir.IntType(8)), ir.IntType(32)], var_arg=False)
+            self.memcpyFunc = ir.Function(self.module, memcpyType, name="memcpy")
+
+            strlenType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8))], var_arg=False)
+            self.strlenFunc = ir.Function(self.module, strlenType, name="strlen")
+
+            strcmpType = ir.FunctionType(ir.IntType(32), [ir.PointerType(ir.IntType(8)), ir.PointerType(ir.IntType(8))], var_arg=False)
+            self.strcmpFunc = ir.Function(self.module, strcmpType, name="strcmp")
+
+            memsetType = ir.FunctionType(ir.PointerType(ir.IntType(8)), [ir.PointerType(ir.IntType(8)), ir.IntType(32), ir.IntType(32)], var_arg=False)
+            self.memsetFunc = ir.Function(self.module, memsetType, name="memset")
+
+
+
+
+
 
     def generateCode(self, node):
         if node.__class__.__name__ == "Program":
@@ -284,8 +343,8 @@ class Codegen:
 
     def FunctionCall(self, node):
         if node.callee.__class__.__name__ == "Var":
-            if node.callee.name == "print":
-                return self.PrintCall(node)
+            if node.callee.name in self.builtin_funcs:
+                return self.builtin_funcs_call[node.callee.name](node)
             func = self.module.get_global(node.callee.name)
             if not func:
                 raise NameError("Unknown function: " + node.callee.name)
@@ -332,6 +391,64 @@ class Codegen:
         fmtStr = " ".join(fmtParts) + "\n"
         llvmFmt = self.createStringConstant(fmtStr)
         return self.builder.call(self.printFunc, [llvmFmt] + llvmArgs)
+    def WriteCall(self, node):
+        llvmArgs = []
+        fmtParts = []
+        
+        val = self.codegen(node.args[0])
+        llvmArgs.append(val)
+        
+        val = self.codegen(node.args[1])
+        llvmArgs.append(val)
+
+        val = self.codegen(node.args[2])
+        llvmArgs.append(val)
+        
+        return self.builder.call(self.writeFunc, llvmArgs)
+
+
+    def ExitCall(self, node):
+        val = self.codegen(node.args[0])
+        return self.builder.call(self.exitFunc, [val])
+
+
+    def ForkCall(self, node):
+        return self.builder.call(self.forkFunc, [])
+
+
+    def ExecveCall(self, node):
+        fmtParts = []
+        llvmArgs = []
+        
+        val = self.codegen(node.args[0])
+        llvmArgs.append(val)
+        
+        val = self.codegen(node.args[1])
+        llvmArgs.append(val)
+
+        val = self.codegen(node.args[2])
+        llvmArgs.append(val)
+
+        return self.builder.call(self.execveFunc, llvmArgs)
+
+
+    def MallocCall(self, node):
+        val = self.codegen(node.args[0])
+        return self.builder.call(self.mallocFunc, [val])
+
+
+    def FreeCall(self, node):
+        val = self.codegen(node.args[0])
+        return self.builder.call(self.freeFunc, [val])
+    
+
+
+
+
+
+
+
+
 
     def MemberAccess(self, node):
         objInfo = self.funcSymtab[node.objectExpr.name]
@@ -500,7 +617,6 @@ class Codegen:
             retval = self.codegen(stmt)
         if not self.builder.block.terminator:
             self.builder.ret(retval if retval else ir.Constant(ir.IntType(32), 0))
-
     def Function(self, node):
         retTypeStr = node.returnType if hasattr(node, "returnType") else "int"
         if retTypeStr in self.datatypes:

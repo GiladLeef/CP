@@ -1,0 +1,23 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+	  {
+		"type": "extensionHost",
+		"request": "launch",
+		"name": "Launch Extension",
+		"args": [
+		  "${workspaceFolder}"
+		],
+		"outFiles": [
+		  "${workspaceFolder}/out/**/*.js"
+		],
+		"preLaunchTask": "npm: watch",
+		"runtimeExecutable": "${execPath}",
+		"runtimeArgs": [
+		  "--extensionDevelopmentPath=${workspaceFolder}"
+		],
+		"port": 9222
+	  }
+	]
+  }
+  
