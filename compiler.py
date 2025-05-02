@@ -46,16 +46,16 @@ class Compiler:
         self.tokens = [(t["type"], t["regex"]) for t in language["tokens"]]
         self.lexer = Lexer(self.tokens)
 
-    def compileSource(self, sourceCode, outputExe):
+    def compileSource(self, sourceCode, outputExe, flags, cflag=False):
         tokens = self.lexer.lex(sourceCode)
         parser = Parser(language, tokens)
         ast = parser.parseProgram()
         codegen = Codegen(language)
         codegen.programNode = ast
         llvmModule = codegen.generateCode(ast)
-        self.compileModule(llvmModule, outputExe)
+        self.compileModule(llvmModule, outputExe, flags, cflag)
 
-    def compileModule(self, llvmModule, outputExe):
+    def compileModule(self, llvmModule, outputExe, flags, cflag=False):
         llvm.initialize()
         llvm.initialize_native_target()
         llvm.initialize_native_asmprinter()
@@ -73,21 +73,50 @@ class Compiler:
             f.write(str(llvmModule))
         linkedBcFilename = "linked.bc"
         subprocess.run(["llvm-link", bcFilename, "-o", linkedBcFilename], check=True)
-        subprocess.run(["clang++", linkedBcFilename, "-o", outputExe, "-lstdc++", "-lm"], check=True)
+        if not cflag:
+            subprocess.run(["clang++", *flags, linkedBcFilename, "-o", outputExe, "-lstdc++", "-lm"], check=True)
+            
+            print(f"Executable '{outputExe}' generated.")
+        else:
+            subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe, "-lstdc++", "-lm"], check=True)
+            print(f"Object '{outputExe} generated, you can now link it")
         os.remove(objFilename)
         os.remove(bcFilename)
         os.remove(linkedBcFilename)
-        print(f"Executable '{outputExe}' generated.")
 def printUsage():
     print("Usage: python compiler.py [OPTIONS] <sourceFile>")
     print("OPTIONS:")
-    print("\t-o             Sets the output file")
+    print("\t-o [OUTFILE]   Sets the output file")
     print("\t-h             Help page")
+    print("\t-c             Create a .o file")
+    print("\t-g             Add debug symbols")
+    print("\t-O[0-3]        Optimise Level")
     sys.exit(1)
 if __name__ == "__main__":
+    flags = []
     if len(sys.argv) < 2:
         printUsage()
+    cflag = False
+    if '-c' in sys.argv:
+        sys.argv.remove('-c')
+        cflag = True
+    if '-g' in sys.argv:
+        sys.argv.remove('-g')
+        flags.append('-g')
 
+    if '-O3' in sys.argv:
+        sys.argv.remove('-O3')
+        flags.append('-O3')
+    elif '-O2' in sys.argv:
+        sys.argv.remove('-O2')
+        flags.append('-O2')
+    elif '-O1' in sys.argv:
+        sys.argv.remove('-O1')
+        flags.append('-O1')
+    elif '-O0' in sys.argv:
+        sys.argv.remove('-O0')
+        flags.append('-O0')
+    
     sourceFile = sys.argv[1]
     if sourceFile  == '-o':
         if len(sys.argv) < 4:
@@ -103,4 +132,4 @@ if __name__ == "__main__":
         if '-o' in sys.argv:
             outputExe = sys.argv[sys.argv.index('-o')+1]
     compiler = Compiler()
-    compiler.compileSource(finalContent, outputExe)
+    compiler.compileSource(finalContent, outputExe, flags, cflag)
