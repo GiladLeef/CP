@@ -4,7 +4,11 @@ import sys
 from lexer import Lexer
 from parser import Parser
 from codegen import Codegen
-from llvmlite import binding as llvm
+try:    
+    from llvmlite import binding as llvm
+except:
+    print("please install llvm lite")
+    exit(1)
 from lang import language
 
 def processImports(filePath, processedFiles=None):
@@ -42,16 +46,16 @@ class Compiler:
         self.tokens = [(t["type"], t["regex"]) for t in language["tokens"]]
         self.lexer = Lexer(self.tokens)
 
-    def compileSource(self, sourceCode, outputExe):
+    def compileSource(self, sourceCode, outputExe, flags, cflag=False, Sflag=False):
         tokens = self.lexer.lex(sourceCode)
         parser = Parser(language, tokens)
         ast = parser.parseProgram()
         codegen = Codegen(language)
         codegen.programNode = ast
         llvmModule = codegen.generateCode(ast)
-        self.compileModule(llvmModule, outputExe)
+        self.compileModule(llvmModule, outputExe, flags, cflag, Sflag)
 
-    def compileModule(self, llvmModule, outputExe):
+    def compileModule(self, llvmModule, outputExe, flags, cflag=False, Sflag=False):
         llvm.initialize()
         llvm.initialize_native_target()
         llvm.initialize_native_asmprinter()
@@ -68,35 +72,79 @@ class Compiler:
         with open(bcFilename, "w") as f:
             f.write(str(llvmModule))
         linkedBcFilename = "linked.bc"
-        subprocess.run(["llvm-link", bcFilename, "-o", linkedBcFilename], check=True)
-        subprocess.run(["clang++", linkedBcFilename, "-o", outputExe, "-lstdc++", "-lm"], check=True)
-        os.remove(objFilename)
-        os.remove(bcFilename)
-        os.remove(linkedBcFilename)
-        print(f"Executable '{outputExe}' generated.")
+        try:
+            subprocess.run(["llvm-link", bcFilename, "-o", linkedBcFilename], check=True)
+            if not cflag and not Sflag:
+                subprocess.run(["clang++", *flags, linkedBcFilename, "-o", outputExe, "-lstdc++", "-lm"], check=True)
+                
+                print(f"Executable '{outputExe}' generated.")
+            else:
+                if not Sflag and cflag:
+                    subprocess.run(["clang++", *flags, linkedBcFilename, "-c", "-o", outputExe], check=True)
+                    print(f"Object '{outputExe} generated, you can now link it")
+                else:
+                    subprocess.run(["clang++", *flags, linkedBcFilename, "-S", "-o", outputExe], check=True)
+                    print(f"Asm file '{outputExe}' generated")
+        finally:
+            os.remove(objFilename)
+            os.remove(bcFilename)
+            os.remove(linkedBcFilename)
 def printUsage():
     print("Usage: python compiler.py [OPTIONS] <sourceFile>")
     print("OPTIONS:")
-    print("\t-o             Sets the output file")
+    print("\t-o [OUTFILE]   Sets the output file")
     print("\t-h             Help page")
+    print("\t-c             Create a .o file")
+    print("\t-g             Add debug symbols")
+    print("\t-O[0-3]        Optimise Level")
     sys.exit(1)
+import sys
+import os
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    valid_optimizations = ['-O3', '-O2', '-O1', '-O0']
+    flags = []
+    cflag = False
+    Sflag = False
+    outputExe = None
+    sourceFile = None
+
+    args = sys.argv[1:]
+
+    if not args or '-h' in args:
         printUsage()
 
-    sourceFile = sys.argv[1]
-    if sourceFile  == '-o':
-        if len(sys.argv) < 4:
+    if '-c' in args:
+        args.remove('-c')
+        cflag = True
+    elif '-S' in args:
+        args.remove('-S')
+        Sflag = True
+    if '-g' in args:
+        args.remove('-g')
+        flags.append('-g')
+    
+    for opt in valid_optimizations:
+        if opt in args:
+            args.remove(opt)
+            flags.append(opt)
+            break
+
+    if '-o' in args:
+        try:
+            o_index = args.index('-o')
+            outputExe = args[o_index + 1]
+            del args[o_index:o_index + 2]
+        except (IndexError, ValueError):
             printUsage()
-        sourceFile = sys.argv[3]
-    elif sourceFile == '-h':
-        printUsage()
-    finalContent = processImports(sourceFile)
 
+    if not args:
+        printUsage()
+    sourceFile = args[0]
+
+    finalContent = processImports(sourceFile)
     baseFilename = os.path.splitext(sourceFile)[0]
-    outputExe = baseFilename + ".exe"
-    if len(sys.argv) > 2:
-        if '-o' in sys.argv:
-            outputExe = sys.argv[sys.argv.index('-o')+1]
+    outputExe = outputExe or baseFilename + ".exe"
+
     compiler = Compiler()
-    compiler.compileSource(finalContent, outputExe)
+    compiler.compileSource(finalContent, outputExe, flags, cflag, Sflag)
