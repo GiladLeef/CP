@@ -1,5 +1,4 @@
 from lexer import AstFactory
-import lexer
 from llvmlite import ir
 class Parser:
     def __init__(self, language, tokens):
@@ -29,7 +28,7 @@ class Parser:
         token = self.currentToken()
         return token and token.tokenType == tokenType
         
-    def peek(self, offset=1) -> lexer.Token:
+    def peek(self, offset=1):
         pos = self.pos + offset
         return self.tokens[pos] if pos < len(self.tokens) else None
 
@@ -38,7 +37,7 @@ class Parser:
         self.pos += 1
         return token
         
-    def consumeToken(self, tokenType) -> lexer.Token:
+    def consumeToken(self, tokenType):
         if self.match(tokenType):
             return self.advance()
         raise SyntaxError(f"Expected token {tokenType}, got {self.currentToken()}")
