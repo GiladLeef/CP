@@ -1,26 +1,50 @@
 [← Back to Introduction](../introduction.md)
 
 # C+ Functions
+
 ## Basics
-in c+ functions can be defined with this syntax:
 
-```
-type name(params){
-    ...
+In C+, functions are defined using the following syntax:
+
+```cpp
+return_type function_name(parameter_list) {
+    // function body
 }
 ```
 
-for example
+* **return\_type**: The data type of the value the function returns (e.g., `int`, `double`, `string`).
+* **function\_name**: The name you use to call the function.
+* **parameter\_list**: A comma-separated list of input parameters, each with a type and a name.
+
+### Example
+
 ```cpp
-string myfunction(string text, string text2){
-    return text+text2
+
+string concatenateStrings(string text1, string text2) {
+    return text1 + text2;
 }
 ```
-so, the `string` is the returntype
 
-## Declarations
+In this example:
 
-in c+ you can declare functions for example if you want to use c functions.
+* `string` is the return type.
+* `concatenateStrings` is the function name.
+* The function takes two parameters of type `string` and returns their concatenation.
+
+## Function Declarations
+
+In C+, you can declare a function before defining it. This is especially useful when working with multiple source files or calling C functions.
+
+### Syntax
+
 ```cpp
-string a_declared_func();
+return_type function_name(parameter_list);
 ```
+
+### Example Declaration
+
+```cpp
+string a_declared_function();
+```
+
+This tells the compiler that a function named `a_declared_function` exists and will return a `string`, even if its definition appears later in the code or in a different file.
