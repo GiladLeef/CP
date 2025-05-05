@@ -1,0 +1,49 @@
+{
+  "name": "cp-ext",
+  "displayName": "C+ Extension",
+  "description": "C+ is a language by Gilad Leef",
+  "version": "0.0.23",
+  "main": "./out/extension.js",
+  "publisher": "CP",
+  "engines": {
+    "vscode": "^1.98.2"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "c+",
+        "aliases": [
+          "C+",
+          "c+"
+        ],
+        "extensions": [
+          ".cp"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "c+",
+        "scopeName": "source.cp",
+        "path": "./syntaxes/c+.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "c+",
+        "path": "./snippets.json"
+      }
+    ]
+  },
+  "scripts": {
+    "watch": "tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/vscode": "^1.98.2"
+  }
+}
