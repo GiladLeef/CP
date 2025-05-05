@@ -93,12 +93,13 @@ datatypes = {
     "int": ir.IntType(32),
     "float": ir.FloatType(),
     "char": ir.IntType(8),
-    "string": ir.PointerType(ir.IntType(8))
+    "string": ir.PointerType(ir.IntType(8)),
+    "void": ir.VoidType()
 }
 
 astnodes = [
     {"name": "Program", "fields": ["functions", "classes"]},
-    {"name": "Function", "fields": ["name", "returnType", "body"]},
+    {"name": "Function", "fields": ["name", "returnType", "args", "body"]},
     {"name": "MethodDecl", "fields": ["name", "parameters", "body", "className", "returnType"]},
     {"name": "Return", "fields": ["expr"]},
     {"name": "ExpressionStatement", "fields": ["expr"]},

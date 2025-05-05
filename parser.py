@@ -1,5 +1,5 @@
 from lexer import AstFactory
-
+from llvmlite import ir
 class Parser:
     def __init__(self, language, tokens):
         self.language = language
@@ -153,9 +153,34 @@ class Parser:
         dataTypeToken = self.consumeDatatype()
         name = self.consumeToken("ID").tokenValue
         self.consumeToken("LPAREN")
+        args = self.consumeFuncArgs()
         self.consumeToken("RPAREN")
-        body = self.parseBlock()
-        return self.astClasses["Function"](name, dataTypeToken.tokenValue, body)
+        if self.currentToken().tokenType == "SEMICOLON":
+            self.consumeToken("SEMICOLON")
+            body = None
+        else:
+            body = self.parseBlock()
+        return self.astClasses["Function"](name, dataTypeToken.tokenValue, args, body)
+    def consumeFuncArgs(self) -> list:
+        args = []
+
+        if self.peek().tokenType == "RPAREN":
+            return args
+
+        while True:
+            if self.currentToken().tokenType == "RPAREN":
+                return args
+            dt = self.consumeDatatype().tokenValue
+            id = self.consumeToken("ID").tokenValue
+
+            args.append((dt, id))
+            if self.currentToken().tokenType == "COMMA":
+                self.consumeToken("COMMA")
+            else:
+                break
+
+        return args
+
 
     def parseStatement(self):
         token = self.currentToken()
